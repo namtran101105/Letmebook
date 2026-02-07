@@ -1,0 +1,40 @@
+# Python
+venv/
+env/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+.directory
+
+# Project-specific (optional)
+data/trips/*.json
+data/itineraries/*.json
+
+# Airflow
+airflow/logs/
+airflow/*.db
+airflow/*.pid
