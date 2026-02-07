@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kingston Trip Planner - Chatbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            height: 90vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            overflow: hidden;
+        }
+
+        .chat-panel {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e0e0e0;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: #f8f9fa;
+            scroll-behavior: smooth;
+        }
+
+        /* Custom scrollbar for messages */
+        .messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: #e0e0e0;
+            border-radius: 10px;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: #999;
+            border-radius: 10px;
+        }
+
+        .messages::-webkit-scrollbar-thumb:hover {
+            background: #666;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .message.user {
+            justify-content: flex-end;
+            display: flex !important;
+        }
+
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .message.bot .message-bubble {
+            background: #e3e3e3;
+            color: #333;
+        }
+
+        .message.user .message-bubble {
+            background: #667eea;
+            color: white;
+            display: block !important;
+        }
+
+        .message.system .message-bubble {
+            background: #fff3cd;
+            color: #856404;
+            max-width: 100%;
+            text-align: center;
+        }
+
+        .message.error .message-bubble {
+            background: #f8d7da;
+            color: #721c24;
+            max-width: 100%;
+        }
+
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        #userInput {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #userInput:focus {
+            border-color: #667eea;
+        }
+
+        #sendBtn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        #sendBtn:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+
+        #sendBtn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .results-panel {
+            display: flex;
+            flex-direction: column;
+            background: #f8f9fa;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .results-header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .results-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: scroll; /* Always show scrollbar */
+            overflow-x: hidden;
+            max-height: 100%;
+        }
+
+        /* Custom scrollbar styling */
+        .results-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .results-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .results-content::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+
+        .results-content::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .preference-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .preference-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .preference-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .preference-item:last-child {
+            border-bottom: none;
+        }
+
+        .label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .value {
+            color: #333;
+        }
+
+        .validation-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .validation-badge.valid {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .validation-badge.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .json-view {
+            background: #2c3e50;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 300px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Chat Panel -->
+        <div class="chat-panel">
+            <div class="header">
+                <h1>🏰 Kingston Trip Planner</h1>
+                <p>Tell me about your trip and I'll extract your preferences</p>
+            </div>
+
+            <div class="messages" id="messages">
+                <div class="message system">
+                    <div class="message-bubble">
+                        👋 Hi there!
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-container">
+                    <input
+                        type="text"
+                        id="userInput"
+                        placeholder="E.g., I want to visit Kingston next weekend with my family..."
+                        autocomplete="off"
+                    >
+                    <button id="sendBtn">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Panel -->
+        <div class="results-panel">
+            <div class="results-header">
+                <h2>📊 Extracted Preferences</h2>
+            </div>
+
+            <div class="results-content" id="results">
+                <div class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p>No preferences extracted yet.<br>Start chatting to see results here!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const resultsDiv = document.getElementById('results');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        let currentPreferences = null;
+
+        // Send message on button click
+        sendBtn.addEventListener('click', sendMessage);
+
+        // Send message on Enter key
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // Disable input
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            // Add user message to chat
+            addMessage('user', message);
+            userInput.value = '';
+
+            // Show loading
+            const loadingId = addMessage('bot', '<div class="loading"></div>');
+
+            try {
+                // Determine if this is initial extraction or refinement
+                const endpoint = currentPreferences ? '/api/refine' : '/api/extract';
+                const body = currentPreferences
+                    ? { preferences: currentPreferences, additional_input: message }
+                    : { user_input: message };
+
+                // Call API
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+
+                // Remove loading message
+                removeMessage(loadingId);
+
+                if (data.success) {
+                    // Store preferences for refinement
+                    currentPreferences = data.preferences;
+
+                    // Show conversational bot message
+                    const botMessage = data.bot_message || `✅ I've extracted your preferences! Check the panel on the right for details.`;
+                    addMessage('bot', botMessage);
+
+                    // Display results
+                    displayResults(data);
+
+                    // If preferences were saved to file, show notification
+                    if (data.saved_to_file) {
+                        addMessage('system', `💾 Your trip preferences have been saved to: ${data.saved_to_file}`);
+                    }
+                } else {
+                    addMessage('error', `❌ Error: ${data.error}`);
+                }
+
+            } catch (error) {
+                removeMessage(loadingId);
+                addMessage('error', `❌ Failed to connect to server: ${error.message}`);
+            }
+
+            // Re-enable input
+            userInput.disabled = false;
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+
+        function addMessage(type, content) {
+            const messageId = 'msg-' + Date.now();
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.id = messageId;
+            messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            // Debug logging
+            console.log(`Added ${type} message:`, content);
+            console.log('Total messages:', messagesDiv.children.length);
+
+            return messageId;
+        }
+
+        function removeMessage(messageId) {
+            const msg = document.getElementById(messageId);
+            if (msg) msg.remove();
+        }
+
+        function displayResults(data) {
+            const prefs = data.preferences;
+            const validation = data.validation;
+
+            resultsDiv.innerHTML = `
+                <!-- Validation Card -->
+                <div class="preference-card">
+                    <h3>✓ Validation</h3>
+                    <div class="preference-item">
+                        <span class="label">Status:</span>
+                        <span class="validation-badge ${validation.valid ? 'valid' : 'warning'}">
+                            ${validation.valid ? '✓ Valid' : '⚠ Has Issues'}
+                        </span>
+                    </div>
+                    <div class="preference-item">
+                        <span class="label">Completeness:</span>
+                        <span class="value">${(validation.completeness_score * 100).toFixed(0)}%</span>
+                    </div>
+                    ${validation.warnings.length > 0 ? `
+                    <div class="preference-item">
+                        <span class="label">Warnings:</span>
+                        <span class="value">${validation.warnings.join(', ')}</span>
+                    </div>
+                    ` : ''}
+                    ${validation.issues.length > 0 ? `
+                    <div class="preference-item">
+                        <span class="label">Issues:</span>
+                        <span class="value" style="color: #dc3545;">${validation.issues.join(', ')}</span>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <!-- Destination Card -->
+                <div class="preference-card">
+                    <h3>🌍 Destination</h3>
+                    ${createItem('City', prefs.city || 'Not specified')}
+                    ${createItem('Country', prefs.country || 'Not specified')}
+                    ${prefs.location_preference ? createItem('Location Preference', prefs.location_preference) : ''}
+                </div>
+
+                <!-- Trip Details Card -->
+                <div class="preference-card">
+                    <h3>📅 Trip Details</h3>
+                    ${createItem('Start Date', prefs.start_date || 'Not specified')}
+                    ${createItem('End Date', prefs.end_date || 'Not specified')}
+                    ${createItem('Duration', prefs.duration_days ? `${prefs.duration_days} days` : 'Not specified')}
+                </div>
+
+                <!-- Budget Card -->
+                <div class="preference-card">
+                    <h3>💰 Budget</h3>
+                    ${createItem('Budget',
+                        prefs.budget ? `$${prefs.budget} ${prefs.budget_currency}` : 'Not specified'
+                    )}
+                </div>
+
+                <!-- Interests & Preferences Card -->
+                <div class="preference-card">
+                    <h3>🎯 Interests & Preferences</h3>
+                    ${createItem('Interests', prefs.interests?.length ? prefs.interests.join(', ') : 'None specified')}
+                    ${prefs.pace ? createItem('Travel Pace', prefs.pace) : ''}
+                </div>
+            `;
+        }
+
+        function createItem(label, value) {
+            return `
+                <div class="preference-item">
+                    <span class="label">${label}:</span>
+                    <span class="value">${value}</span>
+                </div>
+            `;
+        }
+
+        // Check server health on load
+        fetch('/api/health')
+            .then(r => r.json())
+            .then(data => {
+                if (data.nlp_service_ready) {
+                    addMessage('system', `🟢 Connected to server | Model: ${data.model}`);
+                } else {
+                    addMessage('error', '🔴 NLP service not ready. Check your .env configuration.');
+                }
+            })
+            .catch(() => {
+                addMessage('error', '🔴 Cannot connect to server. Make sure the backend is running.');
+            });
+    </script>
+</body>
+</html>
