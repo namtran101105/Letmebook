@@ -4,7 +4,7 @@
 
 The Kingston Trip Planner is a real-time, AI-powered itinerary engine that generates feasible travel itineraries for Kingston, Ontario visitors. This is an MVP being built for a 2-week hackathon demonstration.
 
-**Current Status**: Phase 1 - NLP Extraction and User Information Collection (Completed)
+**Current Status**: Phase 1 Complete, Phase 2 (Itinerary Generation) In Progress
 **Team Size**: 3 developers
 **Timeline**: 14 days
 
@@ -253,31 +253,48 @@ Uses structured output / JSON mode to ensure structured output from the LLM API.
 ## Current File Structure
 
 ```
-travel-planner/
+MonVoyage/
 ├── backend/
-│   ├── app.py                          # Flask application entry point
+│   ├── app.py                          # Flask application entry point (port 8000)
 │   ├── config/
-│   │   └── settings.py                 # Configuration management (includes Gemini + Groq config)
+│   │   └── settings.py                 # Configuration management (Gemini + Groq config)
 │   ├── models/
-│   │   └── trip_preferences.py         # TripPreferences dataclass
+│   │   ├── trip_preferences.py         # TripPreferences dataclass (272 lines)
+│   │   └── itinerary.py               # Itinerary data structures (159 lines)
 │   ├── services/
-│   │   └── nlp_extraction_service.py   # NLP extraction logic
+│   │   ├── nlp_extraction_service.py   # NLP extraction logic (632 lines) ✅
+│   │   └── itinerary_service.py        # Itinerary generation via Gemini (721 lines) ✅
 │   ├── clients/
-│   │   ├── gemini_client.py            # Gemini API wrapper (primary)
-│   │   └── groq_client.py              # Groq API wrapper (fallback)
+│   │   ├── gemini_client.py            # Gemini API wrapper (primary) ✅
+│   │   └── groq_client.py             # Groq API wrapper (fallback) ✅
+│   ├── routes/
+│   │   └── trip_routes.py              # Route definitions (empty stub - TODO)
+│   ├── controllers/
+│   │   └── trip_controller.py          # Business logic handlers (empty stub - TODO)
+│   ├── storage/
+│   │   ├── trip_json_repo.py           # Trip persistence (empty stub - TODO)
+│   │   └── itinerary_json_repo.py      # Itinerary persistence (empty stub - TODO)
 │   ├── utils/
-│   │   └── id_generator.py             # Trip ID generation (unused in Phase 1)
+│   │   └── id_generator.py             # Trip/itinerary ID generation
+│   ├── data/
+│   │   └── trip_requests/              # Saved trip preference JSON files
 │   ├── requirements.txt                # Python dependencies
 │   ├── .env                            # Environment variables (not in git)
 │   ├── .env.example                    # Environment template
 │   ├── diagnose.py                     # Setup diagnostic script
-│   └── test_imports.py                 # Import verification script
+│   ├── test_imports.py                 # Import verification script
+│   └── CLAUDE_EMBEDDED.md             # Backend operational rules
 ├── frontend/
-│   └── index.html                      # Single-page chatbot UI
-└── CLAUDE.md                           # This file
+│   ├── index.html                      # Main HTML entry point
+│   └── src/                            # React components, API client, styles
+├── demo_nlp_extraction.py              # NLP extraction demo script
+├── demo_itinerary_generation.py        # Itinerary generation demo script
+├── CLAUDE.md                           # This file
+├── todo.md                             # Task list & action items
+└── PROJECT_STRUCTURE.md                # Full directory overview
 ```
 
-**Note**: `config/gemini.py` has been removed. All Gemini configuration is merged into `config/settings.py`.
+**Import Convention**: All Python imports use short paths (e.g., `from config.settings import settings`), enabled by `sys.path.insert(0, os.path.dirname(__file__))` in `app.py`.
 
 ## Environment Configuration
 
@@ -293,7 +310,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 
 # Flask Configuration
 HOST=127.0.0.1
-PORT=5000
+PORT=8000
 DEBUG=True
 
 # NLP Extraction Settings
@@ -313,7 +330,7 @@ ITINERARY_MAX_TOKENS=4096
 5. Install dependencies: `pip install -r backend/requirements.txt`
 6. Run diagnostics: `python backend/diagnose.py`
 7. Start server: `python backend/app.py`
-8. Open browser: http://localhost:5000
+8. Open browser: http://localhost:8000
 
 ## Known Issues & Solutions
 
@@ -331,16 +348,18 @@ ITINERARY_MAX_TOKENS=4096
 
 ## Pending Development (Phases 2-3)
 
-### Phase 2: MongoDB Integration & Venue Data
+### Phase 2: Itinerary Generation & MongoDB (IN PROGRESS)
+- [x] Build Gemini prompt for itinerary creation (`services/itinerary_service.py`)
+- [x] Implement feasibility validation (`itinerary_service._validate_feasibility()`)
+- [x] Itinerary data model (`models/itinerary.py`)
+- [ ] Add `/api/generate-itinerary` endpoint to `app.py`
 - [ ] Set up MongoDB database and collections
 - [ ] Implement venue data schema
 - [ ] Seed database with 20-30 Kingston venues
 - [ ] Add Google Maps API for geocoding
 - [ ] Implement venue filtering by interests
 
-### Phase 3: Itinerary Generation
-- [ ] Build Gemini/Groq prompt for itinerary creation
-- [ ] Implement feasibility validation
+### Phase 3: Advanced Features
 - [ ] Add multi-modal transportation planning
 - [ ] Integrate weather API
 - [ ] Build real-time budget tracking
@@ -400,8 +419,8 @@ The hackathon demo must show:
 1. ✅ Natural language preference extraction (COMPLETE)
 2. ✅ Validation and completeness scoring (COMPLETE)
 3. ✅ Real-time UI updates (COMPLETE)
-4. ⏳ MongoDB integration (PENDING)
-5. ⏳ Itinerary generation with Gemini API (primary) / Groq API (fallback) (PENDING)
+4. ✅ Itinerary generation service with Gemini API (IMPLEMENTED - needs API endpoint)
+5. ⏳ MongoDB integration (PENDING)
 6. ⏳ Multi-modal transportation planning (PENDING)
 7. ⏳ Real-time weather tracking (PENDING)
 8. ⏳ Real-time budget tracking (PENDING)
@@ -532,5 +551,5 @@ flake8 backend/
 ---
 
 **Last Updated**: 2026-02-07
-**Phase**: 1 (NLP Extraction) - Complete
-**Next Phase**: 2 (MongoDB Integration & Venue Data)
+**Phase**: Phase 1 Complete, Phase 2 (Itinerary Generation + MongoDB) In Progress
+**Next Steps**: Add `/api/generate-itinerary` endpoint, MongoDB integration
