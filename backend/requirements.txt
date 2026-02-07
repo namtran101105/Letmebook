@@ -2,8 +2,9 @@
 flask==3.0.0
 flask-cors==4.0.0
 
-# HTTP Requests
-requests==2.31.0
+# Groq API (updated to fix httpx compatibility)
+groq>=0.13.0
+httpx>=0.27.0
 
 # Environment Variables
 python-dotenv==1.0.0
