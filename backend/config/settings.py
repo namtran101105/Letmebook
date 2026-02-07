@@ -18,6 +18,9 @@ class Settings:
     GROQ_MODEL: str = os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b')
     GROQ_API_BASE_URL: str = 'https://api.groq.com/openai/v1'
 
+    # Google Maps API Configuration
+    GOOGLE_MAPS_API_KEY: str = os.getenv('GOOGLE_MAPS_API_KEY', '')
+
     # Application Configuration
     DEBUG: bool = os.getenv('DEBUG', 'False').lower() == 'true'
     PORT: int = int(os.getenv('PORT', '5000'))
