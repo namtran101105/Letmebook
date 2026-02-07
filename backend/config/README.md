@@ -32,7 +32,7 @@ Central configuration singleton that all modules import. All LLM configuration (
 
 **Example Usage**:
 ```python
-from backend.config.settings import settings
+from config.settings import settings
 
 # Access Gemini configuration (PRIMARY LLM)
 gemini_key = settings.GEMINI_KEY
@@ -285,7 +285,7 @@ All backend modules import configuration:
 
 ```python
 # In clients/gemini_client.py (PRIMARY LLM)
-from backend.config.settings import settings
+from config.settings import settings
 
 gemini_client = GeminiClient(
     api_key=settings.GEMINI_KEY,
@@ -295,7 +295,7 @@ gemini_client = GeminiClient(
 
 ```python
 # In clients/groq_client.py (FALLBACK LLM)
-from backend.config.settings import settings
+from config.settings import settings
 
 groq_client = GroqClient(
     api_key=settings.GROQ_API_KEY,
@@ -306,7 +306,7 @@ groq_client = GroqClient(
 
 ```python
 # In models/trip_preferences.py
-from backend.config.settings import settings
+from config.settings import settings
 
 def validate_budget(daily_budget: float) -> bool:
     return daily_budget >= settings.MIN_DAILY_BUDGET
@@ -317,7 +317,7 @@ def validate_budget(daily_budget: float) -> bool:
 Configuration is validated in `app.py`:
 
 ```python
-from backend.config.settings import settings
+from config.settings import settings
 
 # Validate configuration
 errors = settings.validate()

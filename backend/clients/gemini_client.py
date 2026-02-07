@@ -4,7 +4,7 @@ Google Gemini API client wrapper with retry logic and structured logging.
 Uses the google-genai SDK (``from google import genai``).
 
 Usage:
-    from backend.clients.gemini_client import GeminiClient
+    from clients.gemini_client import GeminiClient
 
     client = GeminiClient()
     text = await client.generate_content(
@@ -52,7 +52,7 @@ class GeminiClient:
             max_retries: Maximum retry attempts for failed requests.
         """
         # Lazy import to avoid circular dependency at module level
-        from backend.config.settings import settings
+        from config.settings import settings
 
         self.api_key = api_key or settings.GEMINI_KEY
         self.model_name = model_name or settings.GEMINI_MODEL
@@ -88,7 +88,7 @@ class GeminiClient:
         Raises:
             ExternalAPIError: If the API call fails after all retries.
         """
-        from backend.config.settings import settings
+        from config.settings import settings
 
         temp = temperature if temperature is not None else settings.GEMINI_ITINERARY_TEMPERATURE
         tokens = max_tokens or settings.GEMINI_ITINERARY_MAX_TOKENS

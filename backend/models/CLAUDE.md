@@ -38,7 +38,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import date
-from backend.config.settings import settings
+from config.settings import settings
 
 @dataclass
 class TripPreferences:
@@ -713,7 +713,7 @@ if not validation["valid"]:
 - `storage/trip_json_repo.py` - Serializes/deserializes preferences
 
 ### Dependencies
-- `backend.config.settings` - MIN_DAILY_BUDGET, VALID_PACES, VALID_INTERESTS, PACE_PARAMS
+- `config.settings` - MIN_DAILY_BUDGET, VALID_PACES, VALID_INTERESTS, PACE_PARAMS
 - `datetime` - Date validation
 - `typing` - Type hints
 - `dataclasses` - Data structure

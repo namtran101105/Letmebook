@@ -82,23 +82,23 @@ class Settings:
         "relaxed": {
             "activities_per_day": (2, 3),
             "minutes_per_activity": (90, 120),
-            "buffer_minutes": 20,
-            "lunch_minutes": 90,
-            "dinner_minutes": 120
+            "buffer_between_activities": 20,
+            "lunch_duration": 90,
+            "dinner_duration": 120
         },
         "moderate": {
             "activities_per_day": (4, 5),
             "minutes_per_activity": (60, 90),
-            "buffer_minutes": 15,
-            "lunch_minutes": 75,
-            "dinner_minutes": 90
+            "buffer_between_activities": 15,
+            "lunch_duration": 75,
+            "dinner_duration": 90
         },
         "packed": {
             "activities_per_day": (6, 8),
             "minutes_per_activity": (30, 60),
-            "buffer_minutes": 5,
-            "lunch_minutes": 45,
-            "dinner_minutes": 60
+            "buffer_between_activities": 5,
+            "lunch_duration": 45,
+            "dinner_duration": 60
         }
     }
 
@@ -120,9 +120,9 @@ class Settings:
         if not cls.GEMINI_KEY:
             errors.append("GEMINI_KEY is required")
         if cls.GEMINI_EXTRACTION_TEMPERATURE < 0 or cls.GEMINI_EXTRACTION_TEMPERATURE > 1:
-            errors.append("GEMINI_EXTRACTION_TEMPERATURE must be between 0 and 1")
+            errors.append("GEMINI_EXTRACTION_TEMPERATURE must be between 0 and 2")
         if cls.GEMINI_ITINERARY_TEMPERATURE < 0 or cls.GEMINI_ITINERARY_TEMPERATURE > 1:
-            errors.append("GEMINI_ITINERARY_TEMPERATURE must be between 0 and 1")
+            errors.append("GEMINI_ITINERARY_TEMPERATURE must be between 0 and 2")
         if cls.GROQ_API_KEY and (cls.GROQ_TEMPERATURE < 0 or cls.GROQ_TEMPERATURE > 1):
             errors.append("GROQ_TEMPERATURE must be between 0 and 1")
         # Add more validation...
@@ -214,7 +214,7 @@ logger.info("Gemini API configured", extra={
 2. Test default value fallback when env var not set
 3. Test type coercion (string "true" -> boolean True)
 4. Test validation of required fields (GEMINI_KEY)
-5. Test validation of value ranges (temperatures 0-1)
+5. Test validation of value ranges (temperatures 0-2)
 6. Test API key redaction in logs
 7. Test configuration singleton pattern (same instance across imports)
 8. Test PACE_PARAMS structure and VALID_PACES list
@@ -374,23 +374,23 @@ class Settings:
         "relaxed": {
             "activities_per_day": (2, 3),
             "minutes_per_activity": (90, 120),
-            "buffer_minutes": 20,
-            "lunch_minutes": 90,
-            "dinner_minutes": 120
+            "buffer_between_activities": 20,
+            "lunch_duration": 90,
+            "dinner_duration": 120
         },
         "moderate": {
             "activities_per_day": (4, 5),
             "minutes_per_activity": (60, 90),
-            "buffer_minutes": 15,
-            "lunch_minutes": 75,
-            "dinner_minutes": 90
+            "buffer_between_activities": 15,
+            "lunch_duration": 75,
+            "dinner_duration": 90
         },
         "packed": {
             "activities_per_day": (6, 8),
             "minutes_per_activity": (30, 60),
-            "buffer_minutes": 5,
-            "lunch_minutes": 45,
-            "dinner_minutes": 60
+            "buffer_between_activities": 5,
+            "lunch_duration": 45,
+            "dinner_duration": 60
         }
     }
 
@@ -415,13 +415,13 @@ class Settings:
             errors.append("GEMINI_KEY is required")
 
         # Range validation
-        if not 0 <= cls.GEMINI_EXTRACTION_TEMPERATURE <= 1:
+        if not 0 <= cls.GEMINI_EXTRACTION_TEMPERATURE <= 2:
             errors.append(f"GEMINI_EXTRACTION_TEMPERATURE must be 0-1, got {cls.GEMINI_EXTRACTION_TEMPERATURE}")
 
-        if not 0 <= cls.GEMINI_ITINERARY_TEMPERATURE <= 1:
+        if not 0 <= cls.GEMINI_ITINERARY_TEMPERATURE <= 2:
             errors.append(f"GEMINI_ITINERARY_TEMPERATURE must be 0-1, got {cls.GEMINI_ITINERARY_TEMPERATURE}")
 
-        if cls.GROQ_API_KEY and not 0 <= cls.GROQ_TEMPERATURE <= 1:
+        if cls.GROQ_API_KEY and not 0 <= cls.GROQ_TEMPERATURE <= 2:
             errors.append(f"GROQ_TEMPERATURE must be 0-1, got {cls.GROQ_TEMPERATURE}")
 
         if not 1 <= cls.PORT <= 65535:

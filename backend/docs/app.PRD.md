@@ -125,9 +125,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from backend.routes.trip_routes import router as trip_router
-from backend.config.settings import settings
-from backend.utils.id_generator import generate_request_id
+from routes.trip_routes import router as trip_router
+from config.settings import settings
+from utils.id_generator import generate_request_id
 
 # Configure logging
 logging.basicConfig(

@@ -35,8 +35,8 @@ Wrapper for Google Gemini API using the `google-genai` SDK. This is the primary 
 
 **Example Usage**:
 ```python
-from backend.clients.gemini_client import GeminiClient
-from backend.config.settings import settings
+from clients.gemini_client import GeminiClient
+from config.settings import settings
 
 # Initialize client
 client = GeminiClient(
@@ -79,8 +79,8 @@ Wrapper for Groq LLM API used as fallback when Gemini is unavailable.
 
 **Example Usage**:
 ```python
-from backend.clients.groq_client import GroqClient
-from backend.config.settings import settings
+from clients.groq_client import GroqClient
+from config.settings import settings
 
 # Initialize client (only when needed as fallback)
 client = GroqClient(
@@ -184,7 +184,7 @@ GOOGLE_MAPS_API_KEY=your_key_here      # Phase 2
 WEATHER_API_KEY=your_key_here          # Phase 2
 
 # In code
-from backend.config.settings import settings
+from config.settings import settings
 
 gemini_client = GeminiClient(api_key=settings.GEMINI_KEY)
 groq_client = GroqClient(api_key=settings.GROQ_API_KEY)  # Only if fallback needed
@@ -266,7 +266,7 @@ Groq Request 3: 200 OK - Success!
 ### Exception Types
 
 ```python
-from backend.clients.groq_client import ExternalAPIError
+from clients.groq_client import ExternalAPIError
 
 try:
     # Try Gemini first

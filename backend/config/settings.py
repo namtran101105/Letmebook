@@ -5,7 +5,7 @@ Loads environment variables from .env file and provides typed settings
 to all backend modules. Includes validation for required configuration.
 
 Usage:
-    from backend.config.settings import settings
+    from config.settings import settings
     api_key = settings.GEMINI_KEY
 """
 

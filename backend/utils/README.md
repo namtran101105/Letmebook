@@ -30,7 +30,7 @@ Generates unique identifiers using UUID v4.
 
 **Example Usage**:
 ```python
-from backend.utils.id_generator import IDGenerator
+from utils.id_generator import IDGenerator
 
 # Generate trip ID
 trip_id = IDGenerator.generate_trip_id()
@@ -61,7 +61,7 @@ Date parsing and validation utilities for TripPreferences required fields (`star
 
 **Example Usage**:
 ```python
-from backend.utils.date_utils import DateUtils
+from utils.date_utils import DateUtils
 
 # Parse date string (validates TripPreferences start_date / end_date)
 date_obj = DateUtils.parse_date("2026-03-15")
@@ -86,7 +86,7 @@ Structured logging configuration.
 
 **Example Usage**:
 ```python
-from backend.utils.logging_utils import setup_logging
+from utils.logging_utils import setup_logging
 import logging
 
 # Setup JSON logging

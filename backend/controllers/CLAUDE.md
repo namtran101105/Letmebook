@@ -37,9 +37,9 @@
 ```python
 import logging
 from typing import Dict, Any
-from backend.services.nlp_extraction_service import NLPExtractionService
-from backend.models.trip_preferences import TripPreferences
-from backend.config.settings import settings
+from services.nlp_extraction_service import NLPExtractionService
+from models.trip_preferences import TripPreferences
+from config.settings import settings
 
 class TripController:
     """
@@ -372,4 +372,4 @@ class ControllerError(Exception):
 ---
 
 **Last Updated**: 2026-02-07  
-**Status**: Phase 1 - Documentation Complete, Implementation Pending
+**Status**: Phase 1 - Documentation Complete, `trip_controller.py` exists as empty stub

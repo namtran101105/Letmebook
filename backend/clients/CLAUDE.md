@@ -37,7 +37,7 @@
 import logging
 from typing import Optional
 from google import genai
-from backend.config.settings import settings
+from config.settings import settings
 
 class GeminiClient:
     """Client wrapper for Google Gemini API (primary LLM)"""
@@ -141,179 +141,65 @@ class GeminiClient:
 
 ### `groq_client.py` (Phase 1 - Fallback LLM)
 
-**Purpose**: Wrapper for Groq API with retry logic, error handling, and logging. Used as fallback when Gemini is unavailable.
+**Purpose**: Synchronous wrapper for Groq API using the `groq` SDK. Used as fallback when Gemini is unavailable.
 
 **Must Include**:
 ```python
-import httpx
-import logging
-from typing import Dict, Any, List, Optional
-from backend.config.settings import settings
+import json
+from typing import Dict, Any, Optional
+from groq import Groq
+from config.settings import settings
 
 class GroqClient:
-    """Client wrapper for Groq LLM API (fallback)"""
+    """Client for interacting with Groq API (synchronous, fallback LLM)."""
 
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        timeout: int = 30,
-        max_retries: int = 3
-    ):
-        """
-        Initialize Groq client.
-
-        Args:
-            api_key: Groq API key (defaults to settings.GROQ_API_KEY)
-            timeout: Request timeout in seconds
-            max_retries: Maximum retry attempts for failed requests
-        """
+    def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.GROQ_API_KEY
-        self.base_url = "https://api.groq.com/openai/v1"
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.logger = logging.getLogger(__name__)
+        self.model = settings.GROQ_MODEL
 
         if not self.api_key:
-            raise ValueError("Groq API key required")
+            raise ValueError("Groq API key is required")
 
-        # HTTP client with retry configuration
-        self.client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=httpx.Timeout(timeout),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-        )
+        self.client = Groq(api_key=self.api_key)
 
-    async def chat_completion(
+    def generate_content(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        response_format: Optional[Dict[str, str]] = None,
-        request_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Call Groq chat completion API.
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> str:
+        """Generate text content. Returns generated text string."""
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
 
-        Args:
-            messages: List of chat messages [{"role": "user", "content": "..."}]
-            model: Model name (defaults to settings.GROQ_MODEL)
-            temperature: Sampling temperature 0-1 (defaults to settings.GROQ_TEMPERATURE)
-            max_tokens: Max tokens in response (defaults to settings.GROQ_MAX_TOKENS)
-            response_format: {"type": "json_object"} for JSON mode
-            request_id: UUID for correlation logging
-
-        Returns:
-            API response dict with choices, usage, etc.
-
-        Raises:
-            ExternalAPIError: If API call fails after retries
-        """
-        payload = {
-            "model": model or settings.GROQ_MODEL,
-            "messages": messages,
-            "temperature": temperature if temperature is not None else settings.GROQ_TEMPERATURE,
-            "max_tokens": max_tokens or settings.GROQ_MAX_TOKENS
-        }
-
-        if response_format:
-            payload["response_format"] = response_format
-
-        self.logger.debug("Calling Groq API (fallback)", extra={
-            "request_id": request_id,
-            "model": payload["model"],
-            "message_count": len(messages),
-            "temperature": payload["temperature"]
-        })
-
-        # Retry logic
-        last_error = None
-        for attempt in range(self.max_retries):
-            try:
-                response = await self.client.post(
-                    "/chat/completions",
-                    json=payload
-                )
-                response.raise_for_status()
-
-                result = response.json()
-
-                self.logger.info("Groq API success (fallback)", extra={
-                    "request_id": request_id,
-                    "tokens_used": result.get("usage", {}).get("total_tokens", 0),
-                    "model": result.get("model")
-                })
-
-                return result
-
-            except httpx.HTTPStatusError as e:
-                last_error = e
-                self.logger.warning(f"Groq API HTTP error (attempt {attempt+1}/{self.max_retries})", extra={
-                    "request_id": request_id,
-                    "status_code": e.response.status_code,
-                    "error": str(e)
-                })
-
-                # Don't retry on 4xx errors (client errors)
-                if 400 <= e.response.status_code < 500:
-                    break
-
-                if attempt < self.max_retries - 1:
-                    await self._backoff_sleep(attempt)
-
-            except httpx.RequestError as e:
-                last_error = e
-                self.logger.warning(f"Groq API request error (attempt {attempt+1}/{self.max_retries})", extra={
-                    "request_id": request_id,
-                    "error": str(e)
-                })
-
-                if attempt < self.max_retries - 1:
-                    await self._backoff_sleep(attempt)
-
-        # All retries failed
-        self.logger.error("Groq API failed after retries (fallback)", extra={
-            "request_id": request_id,
-            "max_retries": self.max_retries
-        }, exc_info=True)
-
-        raise ExternalAPIError(
-            service="Groq",
-            error=str(last_error),
-            retry_count=self.max_retries
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
+        return response.choices[0].message.content
 
-    async def _backoff_sleep(self, attempt: int):
-        """Exponential backoff sleep"""
-        import asyncio
-        sleep_time = 2 ** attempt  # 1s, 2s, 4s, 8s...
-        self.logger.debug(f"Backing off for {sleep_time}s")
-        await asyncio.sleep(sleep_time)
-
-    async def close(self):
-        """Close HTTP client"""
-        await self.client.aclose()
-
-    async def __aenter__(self):
-        """Async context manager entry"""
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
-        await self.close()
-
-
-class ExternalAPIError(Exception):
-    """Raised when external API call fails"""
-    def __init__(self, service: str, error: str, retry_count: int = 0):
-        self.service = service
-        self.error = error
-        self.retry_count = retry_count
-        super().__init__(f"{service} API failed: {error} (retries: {retry_count})")
+    def generate_json(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2048
+    ) -> Dict[str, Any]:
+        """Generate structured JSON using response_format={"type": "json_object"}."""
+        # Uses JSON mode for guaranteed structured output
+        ...
 ```
+
+**Key Design Decisions**:
+- Uses `groq` SDK directly (synchronous), NOT httpx or async
+- `generate_content()` returns plain text string
+- `generate_json()` uses `response_format={"type": "json_object"}` for structured output
+- `ExternalAPIError` is defined in `gemini_client.py`, not in this file
 
 ---
 
@@ -644,7 +530,7 @@ class WeatherAPIError(ExternalAPIError):
 ### Uses
 - `config/settings.py` - API keys and configuration (all LLM config is in settings.py)
 - `google-genai` - Google Gemini SDK (`from google import genai`)
-- `httpx` - Async HTTP client library (for Groq)
+- `groq` - Groq SDK (synchronous client)
 
 ---
 

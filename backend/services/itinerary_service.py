@@ -6,7 +6,7 @@ produce a day-by-day timetable, parses the result into an Itinerary
 dataclass, and validates feasibility before returning.
 
 Usage:
-    from backend.services.itinerary_service import ItineraryService
+    from services.itinerary_service import ItineraryService
 
     service = ItineraryService()
     itinerary = await service.generate_itinerary(preferences, request_id="req-001")
@@ -16,18 +16,23 @@ Usage:
 import json
 import logging
 import asyncio
+import sys
+import os
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional
 
-from backend.clients.gemini_client import GeminiClient, ExternalAPIError
-from backend.models.itinerary import (
+# Add backend directory to path so imports work both when run directly and when imported
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from clients.gemini_client import GeminiClient, ExternalAPIError
+from models.itinerary import (
     Itinerary,
     ItineraryDay,
     Activity,
     Meal,
     TravelSegment,
 )
-from backend.config.settings import settings
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 

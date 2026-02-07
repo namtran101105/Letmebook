@@ -1,0 +1,352 @@
+{
+  "trip_id": "trip_20260207_180254",
+  "itinerary_version": 1,
+  "created_at": "2026-02-07T18:02:54.974098",
+  "status": "draft",
+  "pace": "moderate",
+  "total_budget": 900.0,
+  "total_spent": 302.0,
+  "total_activities": 12,
+  "activities_per_day_avg": 4.0,
+  "total_travel_time_hours": 0.67,
+  "adaptation_count": 0,
+  "last_adapted_at": null,
+  "days": [
+    {
+      "day_number": 1,
+      "date": "2026-05-10",
+      "morning_departure": {
+        "mode": "mixed",
+        "duration_minutes": 15,
+        "distance_km": 0.0,
+        "from_location": "Downtown Kingston",
+        "to_location": "Fort Henry National Historic Site",
+        "cost": 0.0,
+        "directions": null,
+        "parking_info": null
+      },
+      "activities": [
+        {
+          "activity_id": "trip_20260207_180254_d1_a1",
+          "venue_name": "Fort Henry National Historic Site",
+          "sequence": 1,
+          "planned_start": "09:00",
+          "planned_end": "10:15",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "museums",
+          "notes": "Explore this 19th-century British military fortification and enjoy scenic views.",
+          "duration_reason": "Moderate pace \u2013 allows for main tour and exploration of the fortifications.",
+          "status": "pending",
+          "estimated_cost": 22.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d1_a2",
+          "venue_name": "Royal Military College Museum",
+          "sequence": 2,
+          "planned_start": "10:30",
+          "planned_end": "11:45",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "museums",
+          "notes": "Located on the RMC campus, showcasing military artifacts and history.",
+          "duration_reason": "Moderate pace \u2013 sufficient time for exploring exhibits on military history.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d1_a3",
+          "venue_name": "Marine Museum of the Great Lakes at Kingston",
+          "sequence": 3,
+          "planned_start": "13:15",
+          "planned_end": "14:30",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "museums",
+          "notes": "Discover the history of shipping and shipbuilding on the Great Lakes.",
+          "duration_reason": "Moderate pace \u2013 delve into Kingston's rich maritime past.",
+          "status": "pending",
+          "estimated_cost": 12.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d1_a4",
+          "venue_name": "Kingston Waterfront Pathway & Confederation Park",
+          "sequence": 4,
+          "planned_start": "14:45",
+          "planned_end": "16:00",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "waterfront",
+          "notes": "Enjoy views of Lake Ontario and the historic downtown.",
+          "duration_reason": "Moderate pace \u2013 leisurely walk along the scenic waterfront and relax in the park.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        }
+      ],
+      "meals": [
+        {
+          "meal_type": "lunch",
+          "venue_name": "Dianne's Fish Shack & Smokehouse",
+          "planned_time": "12:00",
+          "estimated_cost": 30.0,
+          "actual_cost": null,
+          "notes": null
+        },
+        {
+          "meal_type": "dinner",
+          "venue_name": "Chez Piggy",
+          "planned_time": "18:00",
+          "estimated_cost": 60.0,
+          "actual_cost": null,
+          "notes": null
+        }
+      ],
+      "evening_return": {
+        "mode": "walking",
+        "duration_minutes": 5,
+        "distance_km": 0.0,
+        "from_location": "Chez Piggy",
+        "to_location": "Downtown Kingston",
+        "cost": 0.0,
+        "directions": null,
+        "parking_info": null
+      },
+      "daily_budget_allocated": 300.0,
+      "daily_budget_spent": 124.0,
+      "total_activities": 4,
+      "total_hours": 0.0
+    },
+    {
+      "day_number": 2,
+      "date": "2026-05-11",
+      "morning_departure": {
+        "mode": "walking",
+        "duration_minutes": 5,
+        "distance_km": 0.0,
+        "from_location": "Downtown Kingston",
+        "to_location": "Kingston City Hall",
+        "cost": 0.0,
+        "directions": null,
+        "parking_info": null
+      },
+      "activities": [
+        {
+          "activity_id": "trip_20260207_180254_d2_a1",
+          "venue_name": "Kingston City Hall",
+          "sequence": 1,
+          "planned_start": "09:00",
+          "planned_end": "10:15",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "museums",
+          "notes": "Explore the grand interior and learn about Kingston's civic history.",
+          "duration_reason": "Moderate pace \u2013 self-guided tour of this National Historic Site and its architecture.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d2_a2",
+          "venue_name": "Agnes Etherington Art Centre",
+          "sequence": 2,
+          "planned_start": "10:30",
+          "planned_end": "11:45",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "museums",
+          "notes": "Home to historical and contemporary art exhibitions.",
+          "duration_reason": "Moderate pace \u2013 appreciate diverse art collections at Queen's University's gallery.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d2_a3",
+          "venue_name": "Queen's University Campus Exploration",
+          "sequence": 3,
+          "planned_start": "13:15",
+          "planned_end": "14:30",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "other",
+          "notes": "Admire the limestone buildings and vibrant university atmosphere.",
+          "duration_reason": "Moderate pace \u2013 leisurely stroll through the historic and picturesque campus grounds.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d2_a4",
+          "venue_name": "St. George's Cathedral",
+          "sequence": 4,
+          "planned_start": "14:45",
+          "planned_end": "16:00",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "other",
+          "notes": "A beautiful historic Anglican cathedral in the heart of downtown.",
+          "duration_reason": "Moderate pace \u2013 time to appreciate the stunning architecture and peaceful interior.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        }
+      ],
+      "meals": [
+        {
+          "meal_type": "lunch",
+          "venue_name": "The Toucan & The Spire",
+          "planned_time": "12:00",
+          "estimated_cost": 28.0,
+          "actual_cost": null,
+          "notes": null
+        },
+        {
+          "meal_type": "dinner",
+          "venue_name": "AquaTerra at Delta Hotels",
+          "planned_time": "18:00",
+          "estimated_cost": 65.0,
+          "actual_cost": null,
+          "notes": null
+        }
+      ],
+      "evening_return": {
+        "mode": "walking",
+        "duration_minutes": 5,
+        "distance_km": 0.0,
+        "from_location": "AquaTerra at Delta Hotels",
+        "to_location": "Downtown Kingston",
+        "cost": 0.0,
+        "directions": null,
+        "parking_info": null
+      },
+      "daily_budget_allocated": 300.0,
+      "daily_budget_spent": 93.0,
+      "total_activities": 4,
+      "total_hours": 0.0
+    },
+    {
+      "day_number": 3,
+      "date": "2026-05-12",
+      "morning_departure": {
+        "mode": "walking",
+        "duration_minutes": 5,
+        "distance_km": 0.0,
+        "from_location": "Downtown Kingston",
+        "to_location": "Kingston Public Market",
+        "cost": 0.0,
+        "directions": null,
+        "parking_info": null
+      },
+      "activities": [
+        {
+          "activity_id": "trip_20260207_180254_d3_a1",
+          "venue_name": "Kingston Public Market & Springer Market Square",
+          "sequence": 1,
+          "planned_start": "09:00",
+          "planned_end": "10:15",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "food",
+          "notes": "Canada's oldest public market, operating since 1801 (open Tuesdays).",
+          "duration_reason": "Moderate pace \u2013 browse local produce, crafts, and soak in the market atmosphere.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d3_a2",
+          "venue_name": "Historic Downtown Walking Tour (Self-Guided)",
+          "sequence": 2,
+          "planned_start": "10:30",
+          "planned_end": "11:45",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "other",
+          "notes": "Discover hidden gems and historic buildings at your own pace.",
+          "duration_reason": "Moderate pace \u2013 explore the charming streets and architecture of the Sydenham Ward.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d3_a3",
+          "venue_name": "Princess Street Shopping & Boutique Exploration",
+          "sequence": 3,
+          "planned_start": "13:15",
+          "planned_end": "14:30",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "other",
+          "notes": "Browse the shops on Kingston's main street for souvenirs or local finds.",
+          "duration_reason": "Moderate pace \u2013 ample time to explore unique local shops and boutiques.",
+          "status": "pending",
+          "estimated_cost": 0.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        },
+        {
+          "activity_id": "trip_20260207_180254_d3_a4",
+          "venue_name": "Mio Gelato & Confederation Park Relaxation",
+          "sequence": 4,
+          "planned_start": "14:45",
+          "planned_end": "16:00",
+          "actual_start": null,
+          "actual_end": null,
+          "category": "food",
+          "notes": "Indulge in artisanal gelato while enjoying the views of Confederation Park.",
+          "duration_reason": "Moderate pace \u2013 enjoy a sweet treat and relax by the waterfront.",
+          "status": "pending",
+          "estimated_cost": 10.0,
+          "actual_cost": null,
+          "travel_to_next": null
+        }
+      ],
+      "meals": [
+        {
+          "meal_type": "lunch",
+          "venue_name": "Pan Chancho Bakery & Cafe",
+          "planned_time": "12:00",
+          "estimated_cost": 30.0,
+          "actual_cost": null,
+          "notes": null
+        },
+        {
+          "meal_type": "dinner",
+          "venue_name": "Wooden Heads Gourmet Pizza",
+          "planned_time": "18:00",
+          "estimated_cost": 45.0,
+          "actual_cost": null,
+          "notes": null
+        }
+      ],
+      "evening_return": {
+        "mode": "walking",
+        "duration_minutes": 5,
+        "distance_km": 0.0,
+        "from_location": "Wooden Heads Gourmet Pizza",
+        "to_location": "Downtown Kingston",
+        "cost": 0.0,
+        "directions": null,
+        "parking_info": null
+      },
+      "daily_budget_allocated": 300.0,
+      "daily_budget_spent": 85.0,
+      "total_activities": 4,
+      "total_hours": 0.0
+    }
+  ]
+}

@@ -35,9 +35,9 @@ Extracts structured `TripPreferences` from natural language user input using Gem
 
 **Example Usage**:
 ```python
-from backend.services.nlp_extraction_service import NLPExtractionService
-from backend.clients.gemini_client import GeminiClient
-from backend.clients.groq_client import GroqClient
+from services.nlp_extraction_service import NLPExtractionService
+from clients.gemini_client import GeminiClient
+from clients.groq_client import GroqClient
 
 # Initialize with Gemini (primary) and optional Groq (fallback)
 gemini_client = GeminiClient(api_key=settings.GEMINI_KEY)
@@ -70,8 +70,8 @@ Generates feasible daily schedules from validated preferences using Gemini LLM.
 
 **Example Usage**:
 ```python
-from backend.services.itinerary_service import ItineraryService
-from backend.clients.gemini_client import GeminiClient
+from services.itinerary_service import ItineraryService
+from clients.gemini_client import GeminiClient
 
 # Initialize
 gemini_client = GeminiClient(api_key=settings.GEMINI_KEY)

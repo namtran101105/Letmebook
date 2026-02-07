@@ -39,10 +39,20 @@ def index():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
+    # Determine which model is being used
+    if nlp_service:
+        if nlp_service.use_gemini:
+            model_info = f"Gemini ({settings.GEMINI_MODEL})"
+        else:
+            model_info = f"Groq ({settings.GROQ_MODEL})"
+    else:
+        model_info = "Not initialized"
+
     return jsonify({
         'status': 'healthy',
         'service': 'Kingston Trip Planner',
-        'model': settings.GROQ_MODEL,
+        'primary_llm': 'gemini' if (nlp_service and nlp_service.use_gemini) else 'groq',
+        'model': model_info,
         'nlp_service_ready': nlp_service is not None,
         'error': nlp_service_error if nlp_service_error else None
     })
@@ -200,7 +210,11 @@ if __name__ == '__main__':
     try:
         settings.validate()
         print(f"✅ Settings validated")
-        print(f"📍 Using Groq model: {settings.GROQ_MODEL}")
+        if nlp_service:
+            if nlp_service.use_gemini:
+                print(f"📍 Using Gemini API (Primary): {settings.GEMINI_MODEL}")
+            else:
+                print(f"📍 Using Groq API (Fallback): {settings.GROQ_MODEL}")
         print(f"🌐 Starting server on http://{settings.HOST}:{settings.PORT}")
     except ValueError as e:
         print(f"❌ Configuration error: {e}")

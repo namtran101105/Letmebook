@@ -1,11 +1,13 @@
 """
 NLP service for extracting structured trip preferences from natural language input.
-Uses Groq API to parse user messages and extract travel details.
+Uses Gemini API (primary) or Groq API (fallback) to parse user messages and extract travel details.
 """
 import json
 import os
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
+from clients.gemini_client import GeminiClient
 from clients.groq_client import GroqClient
 from models.trip_preferences import TripPreferences
 from config.settings import settings
@@ -14,9 +16,31 @@ from config.settings import settings
 class NLPExtractionService:
     """Service for extracting trip preferences from natural language."""
 
-    def __init__(self):
-        """Initialize the extraction service with Groq client."""
-        self.groq_client = GroqClient()
+    def __init__(self, use_gemini: bool = True):
+        """
+        Initialize the extraction service with Gemini (primary) or Groq (fallback) client.
+
+        Args:
+            use_gemini: If True, use Gemini API. If False, use Groq API.
+        """
+        self.use_gemini = use_gemini
+
+        try:
+            if use_gemini and settings.GEMINI_KEY:
+                self.gemini_client = GeminiClient()
+                self.groq_client = None
+                print("✅ Using Gemini API (Primary)")
+            else:
+                self.gemini_client = None
+                self.groq_client = GroqClient()
+                print("✅ Using Groq API (Fallback)")
+        except Exception as e:
+            # If Gemini fails, fallback to Groq
+            print(f"⚠️  Gemini initialization failed, using Groq fallback: {e}")
+            self.gemini_client = None
+            self.groq_client = GroqClient()
+            self.use_gemini = False
+
         self.system_instruction = self._build_system_instruction()
 
     def _build_system_instruction(self) -> str:
@@ -119,13 +143,34 @@ class NLPExtractionService:
         prompt = self._build_extraction_prompt(user_input)
 
         try:
-            # Call Groq API to extract preferences as JSON
-            extracted_data = self.groq_client.generate_json(
-                prompt=prompt,
-                system_instruction=self.system_instruction,
-                temperature=settings.EXTRACTION_TEMPERATURE,
-                max_tokens=settings.EXTRACTION_MAX_TOKENS
-            )
+            if self.use_gemini and self.gemini_client:
+                # Call Gemini API (async, so use asyncio.run to make it sync)
+                extracted_text = asyncio.run(
+                    self.gemini_client.generate_content(
+                        prompt=prompt,
+                        system_instruction=self.system_instruction,
+                        temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
+                        max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS
+                    )
+                )
+
+                # Parse JSON from response
+                extracted_text = extracted_text.strip()
+                if extracted_text.startswith("```json"):
+                    extracted_text = extracted_text.split("```json")[1].split("```")[0].strip()
+                elif extracted_text.startswith("```"):
+                    extracted_text = extracted_text.split("```")[1].split("```")[0].strip()
+
+                extracted_data = json.loads(extracted_text)
+
+            else:
+                # Call Groq API to extract preferences as JSON
+                extracted_data = self.groq_client.generate_json(
+                    prompt=prompt,
+                    system_instruction=self.system_instruction,
+                    temperature=settings.GROQ_TEMPERATURE,
+                    max_tokens=settings.GROQ_MAX_TOKENS
+                )
 
             # Create TripPreferences object
             preferences = TripPreferences(**extracted_data)

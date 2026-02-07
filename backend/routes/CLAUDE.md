@@ -4,7 +4,9 @@
 - `MONVOYAGE/CLAUDE.md` (project-wide architecture, testing conventions)
 - `MONVOYAGE/backend/CLAUDE_EMBEDDED.md` (backend-operational rules, MVP requirements)
 
-**Module Purpose**: HTTP route definitions for FastAPI/Flask. Maps URL endpoints to controller functions. Handles request/response formatting, CORS, and middleware.
+**Module Purpose**: HTTP route definitions for Flask. Maps URL endpoints to controller functions. Handles request/response formatting, CORS, and middleware.
+
+> **Note**: The project uses **Flask** (not FastAPI). Code examples below show FastAPI patterns as aspirational target, but the current `app.py` uses Flask with `@app.route()` decorators. When implementing, use Flask Blueprint patterns.
 
 ---
 
@@ -38,9 +40,9 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import logging
 
-from backend.controllers.trip_controller import TripController
-from backend.controllers.itinerary_controller import ItineraryController
-from backend.utils.id_generator import IDGenerator
+from controllers.trip_controller import TripController
+from controllers.itinerary_controller import ItineraryController
+from utils.id_generator import IDGenerator
 
 router = APIRouter(tags=["trips"])
 logger = logging.getLogger(__name__)
@@ -515,4 +517,4 @@ def test_extract_validation_error(client: TestClient, mock_controller):
 ---
 
 **Last Updated**: 2026-02-07  
-**Status**: Phase 1 - Documentation Complete, Implementation Pending
+**Status**: Phase 1 - Documentation Complete, `trip_routes.py` exists as empty stub. Routes are currently inline in `app.py`

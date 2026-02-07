@@ -37,7 +37,7 @@ Extracts trip preferences from natural language via Gemini (primary) / Groq (fal
 
 **Example**:
 ```python
-from backend.controllers.trip_controller import TripController
+from controllers.trip_controller import TripController
 
 controller = TripController()
 result = await controller.extract_preferences(
@@ -104,7 +104,7 @@ Generates a trip itinerary from validated preferences (all 10 required fields mu
 
 **Example**:
 ```python
-from backend.controllers.itinerary_controller import ItineraryController
+from controllers.itinerary_controller import ItineraryController
 
 controller = ItineraryController()
 result = await controller.generate_itinerary(
@@ -225,7 +225,7 @@ pytest backend/tests/controllers/ --cov=backend/controllers --cov-report=html
 ```python
 import pytest
 from unittest.mock import Mock, AsyncMock
-from backend.controllers.trip_controller import TripController
+from controllers.trip_controller import TripController
 
 @pytest.fixture
 def mock_nlp_service():
@@ -366,7 +366,7 @@ except ValidationError as e:
 **Solution**: Use storage/repository layer
 ```python
 # ❌ BAD
-from backend.storage.database import db
+from storage.database import db
 
 class TripController:
     async def save_trip(self, preferences):

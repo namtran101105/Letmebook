@@ -33,7 +33,7 @@ Save trip preferences to JSON file.
 
 **Example**:
 ```python
-from backend.storage.trip_json_repo import TripJsonRepository
+from storage.trip_json_repo import TripJsonRepository
 
 repo = TripJsonRepository()
 repo.save(
@@ -113,7 +113,7 @@ Save itinerary for a trip.
 
 **Example**:
 ```python
-from backend.storage.itinerary_json_repo import ItineraryJsonRepository
+from storage.itinerary_json_repo import ItineraryJsonRepository
 
 repo = ItineraryJsonRepository()
 repo.save(
@@ -310,7 +310,7 @@ pytest backend/tests/storage/ --cov=backend/storage --cov-report=html
 ```python
 import pytest
 import tempfile
-from backend.storage.trip_json_repo import TripJsonRepository
+from storage.trip_json_repo import TripJsonRepository
 
 @pytest.fixture
 def temp_repo():
@@ -463,7 +463,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 ### Controller Using Repository
 
 ```python
-from backend.storage.trip_json_repo import TripJsonRepository
+from storage.trip_json_repo import TripJsonRepository
 
 class TripController:
     def __init__(self):

@@ -35,9 +35,13 @@
 class NLPExtractionService:
     """Natural language extraction for trip preferences"""
 
-    def __init__(self, gemini_client: GeminiClient, groq_client: Optional[GroqClient] = None):
-        self.gemini_client = gemini_client
-        self.groq_client = groq_client  # Optional fallback
+    def __init__(self, use_gemini: bool = True):
+        """
+        Initialize with Gemini (primary) or Groq (fallback).
+        Creates clients internally based on available API keys.
+        """
+        self.use_gemini = use_gemini
+        # Creates GeminiClient or GroqClient internally
         self.logger = logging.getLogger(__name__)
 
     async def extract_preferences(

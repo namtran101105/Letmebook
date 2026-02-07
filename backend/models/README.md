@@ -51,7 +51,7 @@ User trip preferences and constraints.
 
 **Example Usage**:
 ```python
-from backend.models.trip_preferences import TripPreferences
+from models.trip_preferences import TripPreferences
 
 # Create preferences with required fields
 prefs = TripPreferences(
@@ -98,7 +98,7 @@ Generated trip itinerary with daily schedules.
 
 **Example Usage**:
 ```python
-from backend.models.itinerary import Itinerary, ItineraryDay, Activity, Meal, TravelSegment
+from models.itinerary import Itinerary, ItineraryDay, Activity, Meal, TravelSegment
 
 # Create an activity
 activity = Activity(
