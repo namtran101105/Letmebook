@@ -13,7 +13,7 @@ def main():
 
     result = client.search_flights(
         origin="Toronto, Ontario",
-        destination="Hanoi, Vietnam",
+        destination="Montreal, Quebec",
         departure_date="2026-02-15",
         return_date="2026-02-25",
     )

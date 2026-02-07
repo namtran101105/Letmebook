@@ -12,8 +12,8 @@ def main():
     client = BusbudClient()
 
     result = client.search_all(
-        origin="Kingston",
-        destination="Toronto",
+        origin="Toronto",
+        destination="Montreal",
         departure_date="2026-02-15",
         return_date="2026-02-20",
     )
