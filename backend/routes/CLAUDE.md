@@ -17,7 +17,7 @@
 4. Request ID middleware
 
 ### Planned (Phase 2/3)
-5. Itinerary generation endpoints
+5. **Itinerary Routes** (`itinerary_routes.py`) - Endpoints for itinerary generation and management
 6. Budget tracking endpoints
 7. Venue search endpoints
 8. Weather check endpoints
@@ -39,20 +39,30 @@ from typing import Optional, Dict, Any
 import logging
 
 from backend.controllers.trip_controller import TripController
+from backend.controllers.itinerary_controller import ItineraryController
 from backend.utils.id_generator import IDGenerator
 
 router = APIRouter(tags=["trips"])
 logger = logging.getLogger(__name__)
 
 # Request/Response Models
+
+# --- TripPreferences Schema ---
+# REQUIRED fields (10): city, country, start_date, end_date, duration_days,
+#   budget, budget_currency, interests, pace, location_preference
+# OPTIONAL fields: starting_location (default: from location_preference),
+#   hours_per_day (default: 8), transportation_modes (default: ["mixed"]),
+#   group_size, group_type, children_ages, dietary_restrictions,
+#   accessibility_needs, weather_tolerance, must_see_venues, must_avoid_venues
+
 class ExtractRequest(BaseModel):
     """Request body for /extract endpoint"""
     user_input: str
-    
+
     class Config:
         json_schema_extra = {
             "example": {
-                "user_input": "I want to visit Kingston March 15-17 with $200 budget"
+                "user_input": "I want to visit Kingston March 15-17 with $200 budget, interested in history and food, moderate pace"
             }
         }
 
@@ -60,12 +70,45 @@ class RefineRequest(BaseModel):
     """Request body for /refine endpoint"""
     preferences: Dict[str, Any]
     additional_input: str
-    
+
     class Config:
         json_schema_extra = {
             "example": {
-                "preferences": {...},
+                "preferences": {
+                    "city": "Kingston",
+                    "country": "Canada",
+                    "start_date": "2026-03-15",
+                    "end_date": "2026-03-17",
+                    "duration_days": 3,
+                    "budget": 200.0,
+                    "budget_currency": "CAD",
+                    "interests": ["history"],
+                    "pace": "moderate",
+                    "location_preference": "downtown"
+                },
                 "additional_input": "I'm vegetarian and need wheelchair access"
+            }
+        }
+
+class GenerateItineraryRequest(BaseModel):
+    """Request body for /itinerary/generate endpoint"""
+    preferences: Dict[str, Any]
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "preferences": {
+                    "city": "Kingston",
+                    "country": "Canada",
+                    "start_date": "2026-03-15",
+                    "end_date": "2026-03-17",
+                    "duration_days": 3,
+                    "budget": 200.0,
+                    "budget_currency": "CAD",
+                    "interests": ["history", "food"],
+                    "pace": "moderate",
+                    "location_preference": "downtown"
+                }
             }
         }
 
@@ -74,6 +117,7 @@ class TripResponse(BaseModel):
     success: bool
     preferences: Optional[Dict[str, Any]] = None
     validation: Optional[Dict[str, Any]] = None
+    itinerary: Optional[Dict[str, Any]] = None
     error: Optional[Dict[str, Any]] = None
 
 # Health Check
@@ -89,7 +133,8 @@ async def health_check():
         "status": "healthy",
         "service": "MonVoyage Trip Planner",
         "version": "1.0.0",
-        "phase": "1"
+        "phase": "1",
+        "llm": "Gemini (primary) / Groq (fallback)"
     }
 
 # Extract Preferences (Initial)
@@ -213,7 +258,55 @@ async def refine_preferences(request: Request, body: RefineRequest):
         logger.error("Refine failed", extra={
             "request_id": request_id
         }, exc_info=True)
-        
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Generate Itinerary
+@router.post("/itinerary/generate", response_model=TripResponse)
+async def generate_itinerary(request: Request, body: GenerateItineraryRequest):
+    """
+    Generate a trip itinerary from validated preferences.
+
+    Uses Gemini (primary) / Groq (fallback) to generate a feasible
+    itinerary based on the 10 required TripPreferences fields:
+    city, country, start_date, end_date, duration_days, budget,
+    budget_currency, interests, pace, location_preference.
+
+    Args:
+        body: Request with validated preferences dict
+
+    Returns:
+        Generated itinerary and validation results
+
+    Raises:
+        HTTPException: 400 if preferences incomplete, 500 if generation fails
+    """
+    request_id = IDGenerator.generate_request_id()
+
+    logger.info("Generate itinerary request", extra={
+        "request_id": request_id,
+        "trip_id": body.preferences.get("trip_id")
+    })
+
+    try:
+        controller = ItineraryController()
+        result = await controller.generate_itinerary(
+            preferences=body.preferences,
+            request_id=request_id
+        )
+
+        return TripResponse(
+            success=True,
+            preferences=result.get("preferences"),
+            itinerary=result.get("itinerary"),
+            validation=result.get("validation")
+        )
+
+    except Exception as e:
+        logger.error("Itinerary generation failed", extra={
+            "request_id": request_id
+        }, exc_info=True)
+
         raise HTTPException(status_code=500, detail=str(e))
 ```
 
@@ -356,7 +449,8 @@ def test_extract_validation_error(client: TestClient, mock_controller):
 ## Integration Points
 
 ### Calls
-- `controllers/trip_controller.py` - Business logic handlers
+- `controllers/trip_controller.py` - Trip preference extraction/refinement handlers
+- `controllers/itinerary_controller.py` - Itinerary generation handlers
 - `utils/id_generator.py` - Request ID generation
 
 ### Called By
@@ -365,10 +459,53 @@ def test_extract_validation_error(client: TestClient, mock_controller):
 
 ---
 
+## LLM Configuration
+
+- **Primary LLM**: Gemini (configured in `config/settings.py`)
+- **Fallback LLM**: Groq (configured in `config/settings.py`)
+- All LLM configuration is centralized in `settings.py` (no separate `gemini.py`)
+- The NLP extraction and itinerary generation services use Gemini by default, falling back to Groq on failure
+
+---
+
+## TripPreferences Schema Reference
+
+### Required Fields (10)
+| Field | Type | Description |
+|-------|------|-------------|
+| `city` | `str` | Destination city (e.g., "Kingston") |
+| `country` | `str` | Destination country (e.g., "Canada") |
+| `start_date` | `str` | Trip start date (YYYY-MM-DD) |
+| `end_date` | `str` | Trip end date (YYYY-MM-DD) |
+| `duration_days` | `int` | Number of trip days |
+| `budget` | `float` | Total budget amount |
+| `budget_currency` | `str` | Currency code (e.g., "CAD") |
+| `interests` | `List[str]` | Activity interests (min 1) |
+| `pace` | `str` | "relaxed", "moderate", or "packed" |
+| `location_preference` | `str` | Area preference (e.g., "downtown") |
+
+### Optional Fields
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `starting_location` | `str` | from `location_preference` | Specific starting address/hotel |
+| `hours_per_day` | `int` | `8` | Available hours per day |
+| `transportation_modes` | `List[str]` | `["mixed"]` | Travel modes |
+| `group_size` | `int` | - | Number of travelers |
+| `group_type` | `str` | - | e.g., "family", "couple", "solo" |
+| `children_ages` | `List[int]` | - | Ages of children |
+| `dietary_restrictions` | `List[str]` | - | e.g., ["vegetarian"] |
+| `accessibility_needs` | `List[str]` | - | e.g., ["wheelchair"] |
+| `weather_tolerance` | `str` | - | e.g., "any", "no rain" |
+| `must_see_venues` | `List[str]` | - | Required venues |
+| `must_avoid_venues` | `List[str]` | - | Venues to avoid |
+
+---
+
 ## Assumptions
 1. FastAPI handles request parsing and validation
 2. Pydantic models validate request bodies
 3. CORS middleware is configured at app level
+4. Gemini is the primary LLM; Groq is the fallback
 
 ## Open Questions
 1. Should we rate limit endpoints?

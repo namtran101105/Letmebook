@@ -315,23 +315,40 @@ def temp_storage():
         yield tmpdir
 
 def test_save_and_load_trip(temp_storage):
-    """Test saving and loading trip"""
+    """Test saving and loading trip with all 10 required fields"""
     repo = TripJsonRepository(storage_dir=temp_storage)
-    
+
+    # TripPreferences with 10 required fields + optional fields
     preferences = {
+        # Required fields (10)
+        "city": "Kingston",
+        "country": "Canada",
         "start_date": "2026-03-15",
         "end_date": "2026-03-17",
-        "budget": 200.0
+        "duration_days": 3,
+        "budget": 200.0,
+        "budget_currency": "CAD",
+        "interests": ["history", "food"],
+        "pace": "moderate",
+        "location_preference": "downtown",
+        # Optional fields (defaults applied if missing)
+        "starting_location": "downtown",
+        "hours_per_day": 8,
+        "transportation_modes": ["mixed"],
+        "dietary_restrictions": ["vegetarian"]
     }
-    
+
     # Save
     repo.save("trip_123", preferences)
-    
+
     # Load
     loaded = repo.load("trip_123")
     assert loaded is not None
     assert loaded["trip_id"] == "trip_123"
+    assert loaded["preferences"]["city"] == "Kingston"
     assert loaded["preferences"]["budget"] == 200.0
+    assert loaded["preferences"]["duration_days"] == 3
+    assert loaded["preferences"]["pace"] == "moderate"
 
 def test_load_nonexistent_trip(temp_storage):
     """Test loading trip that doesn't exist"""
@@ -342,10 +359,22 @@ def test_load_nonexistent_trip(temp_storage):
 def test_list_all_trips(temp_storage):
     """Test listing all trips"""
     repo = TripJsonRepository(storage_dir=temp_storage)
-    
-    repo.save("trip_1", {"budget": 100})
-    repo.save("trip_2", {"budget": 200})
-    
+
+    repo.save("trip_1", {
+        "city": "Kingston", "country": "Canada",
+        "start_date": "2026-03-15", "end_date": "2026-03-17",
+        "duration_days": 3, "budget": 100, "budget_currency": "CAD",
+        "interests": ["history"], "pace": "relaxed",
+        "location_preference": "downtown"
+    })
+    repo.save("trip_2", {
+        "city": "Kingston", "country": "Canada",
+        "start_date": "2026-04-01", "end_date": "2026-04-03",
+        "duration_days": 3, "budget": 200, "budget_currency": "CAD",
+        "interests": ["food"], "pace": "packed",
+        "location_preference": "waterfront"
+    })
+
     all_trips = repo.list_all()
     assert len(all_trips) == 2
     assert "trip_1" in all_trips
@@ -364,10 +393,29 @@ def test_list_all_trips(temp_storage):
   _id: ObjectId,
   trip_id: "trip_20260207_abc123",
   preferences: {
+    // Required fields (10)
+    city: "Kingston",
+    country: "Canada",
     start_date: "2026-03-15",
     end_date: "2026-03-17",
+    duration_days: 3,
     budget: 200.0,
-    // ... other fields
+    budget_currency: "CAD",
+    interests: ["history", "food"],
+    pace: "moderate",
+    location_preference: "downtown",
+    // Optional fields
+    starting_location: "downtown",          // default: from location_preference
+    hours_per_day: 8,                       // default: 8
+    transportation_modes: ["mixed"],        // default: ["mixed"]
+    group_size: null,
+    group_type: null,
+    children_ages: [],
+    dietary_restrictions: ["vegetarian"],
+    accessibility_needs: [],
+    weather_tolerance: null,
+    must_see_venues: [],
+    must_avoid_venues: []
   },
   created_at: ISODate("2026-02-07T14:30:00Z"),
   updated_at: ISODate("2026-02-07T14:30:00Z"),
@@ -441,7 +489,8 @@ class TripNotFoundError(StorageError):
 ## Integration Points
 
 ### Used By
-- `controllers/trip_controller.py` - Save/load trips
+- `controllers/trip_controller.py` - Save/load trips (preferences with 10 required + optional fields)
+- `controllers/itinerary_controller.py` - Save/load itineraries (generated via Gemini primary / Groq fallback)
 - `services/itinerary_service.py` - Save/load itineraries
 
 ### Uses

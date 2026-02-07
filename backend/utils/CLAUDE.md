@@ -4,7 +4,7 @@
 - `MONVOYAGE/CLAUDE.md` (project-wide architecture, testing conventions)
 - `MONVOYAGE/backend/CLAUDE_EMBEDDED.md` (backend-operational rules, MVP requirements)
 
-**Module Purpose**: Utility functions and helper classes used across the backend - ID generation, date parsing, validation helpers, logging configuration, and common operations.
+**Module Purpose**: Utility functions and helper classes used across the backend - ID generation, date parsing, validation helpers, logging configuration, and common operations. Supports both Gemini (primary) and Groq (fallback) LLM workflows.
 
 ---
 
@@ -115,7 +115,7 @@ class IDGenerator:
 
 ### `date_utils.py` (Phase 2 - Planned)
 
-**Purpose**: Date parsing and validation utilities.
+**Purpose**: Date parsing and validation utilities for TripPreferences required fields (`start_date`, `end_date`, `duration_days`).
 
 **Key Functions**:
 ```python
@@ -363,10 +363,33 @@ if not valid:
 - All modules needing unique IDs (services, controllers, models)
 - All modules needing date validation (models, services)
 - All modules needing logging (entire backend)
+- NLP extraction and itinerary generation services (Gemini primary / Groq fallback)
 
 ### Uses
 - Python standard library (`uuid`, `datetime`, `logging`)
 - No external dependencies
+- LLM configuration comes from `config/settings.py` (Gemini + Groq, no separate gemini.py)
+
+---
+
+## TripPreferences Field Reference
+
+Utilities support the following TripPreferences schema:
+
+**Required Fields (10):** `city`, `country`, `start_date`, `end_date`, `duration_days`, `budget`, `budget_currency`, `interests`, `pace`, `location_preference`
+
+**Optional Fields:** `starting_location` (default: from `location_preference`), `hours_per_day` (default: 8), `transportation_modes` (default: `["mixed"]`), `group_size`, `group_type`, `children_ages`, `dietary_restrictions`, `accessibility_needs`, `weather_tolerance`, `must_see_venues`, `must_avoid_venues`
+
+Date utils specifically validate `start_date`, `end_date`, and compute `duration_days`. ID generator creates trip/activity/request IDs used across all preference and itinerary operations.
+
+---
+
+## LLM Configuration
+
+- **Primary LLM**: Gemini (configured in `config/settings.py`)
+- **Fallback LLM**: Groq (configured in `config/settings.py`)
+- All LLM configuration is centralized in `settings.py` (no separate `gemini.py`)
+- Utils do not directly call LLMs, but generate IDs and validate dates for LLM-powered services
 
 ---
 
@@ -374,6 +397,7 @@ if not valid:
 1. UUIDs are sufficiently unique for application needs
 2. All dates are in UTC timezone
 3. System clock is synchronized (for timestamps)
+4. Gemini is the primary LLM; Groq is the fallback
 
 ## Open Questions
 1. Do we need sortable IDs (ULID instead of UUID)?

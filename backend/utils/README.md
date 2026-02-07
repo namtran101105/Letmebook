@@ -4,7 +4,8 @@
 
 The `utils/` module provides common utility functions and helper classes used throughout the backend. These include ID generation, date handling, logging configuration, and validation helpers.
 
-**Current Status**: Phase 1 - ID generator defined, implementation pending  
+**Current Status**: Phase 1 - ID generator defined, implementation pending
+**LLM**: Gemini (primary) / Groq (fallback) -- all config in `settings.py`
 **Dependencies**: Python standard library only (no external dependencies)
 
 ---
@@ -56,13 +57,13 @@ is_valid = IDGenerator.is_valid_uuid("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 
 ### `date_utils.py` (Phase 2 - Planned)
 
-Date parsing and validation utilities.
+Date parsing and validation utilities for TripPreferences required fields (`start_date`, `end_date`, `duration_days`).
 
 **Example Usage**:
 ```python
 from backend.utils.date_utils import DateUtils
 
-# Parse date string
+# Parse date string (validates TripPreferences start_date / end_date)
 date_obj = DateUtils.parse_date("2026-03-15")
 # Result: date(2026, 3, 15)
 
@@ -70,7 +71,7 @@ date_obj = DateUtils.parse_date("2026-03-15")
 valid, error = DateUtils.validate_date_range("2026-03-15", "2026-03-17")
 # Result: (True, None)
 
-# Calculate duration
+# Calculate duration (used to compute TripPreferences duration_days)
 days = DateUtils.calculate_duration("2026-03-15", "2026-03-17")
 # Result: 3 (inclusive: March 15, 16, 17)
 
@@ -149,7 +150,8 @@ request_id = "req_20260207_143052_a1b2c3d4"
 
 # All logs for this request use same ID
 logger.info("Request received", extra={"request_id": request_id})
-logger.info("Calling Groq API", extra={"request_id": request_id})
+logger.info("Calling Gemini API (primary)", extra={"request_id": request_id})
+logger.info("Gemini failed, falling back to Groq", extra={"request_id": request_id})
 logger.info("Response sent", extra={"request_id": request_id})
 
 # Search logs by request_id to see entire request flow
@@ -239,13 +241,13 @@ Every log should include `request_id`:
 # Generate at request start
 request_id = IDGenerator.generate_request_id()
 
-# Pass to all operations
+# Pass to all operations (Gemini primary / Groq fallback)
 preferences = await nlp_service.extract_preferences(
-    user_input, 
+    user_input,
     request_id=request_id
 )
 
-# All logs use same request_id for correlation
+# All logs use same request_id for correlation across Gemini/Groq calls
 ```
 
 ---
@@ -397,6 +399,18 @@ Calculate duration in days (inclusive).
 **`format_iso8601(dt: datetime) -> str`**
 
 Format datetime as ISO-8601 string.
+
+---
+
+## TripPreferences Field Reference
+
+Utilities support the following TripPreferences schema:
+
+**Required Fields (10):** `city`, `country`, `start_date`, `end_date`, `duration_days`, `budget`, `budget_currency`, `interests`, `pace`, `location_preference`
+
+**Optional Fields:** `starting_location` (default: from `location_preference`), `hours_per_day` (default: 8), `transportation_modes` (default: `["mixed"]`), `group_size`, `group_type`, `children_ages`, `dietary_restrictions`, `accessibility_needs`, `weather_tolerance`, `must_see_venues`, `must_avoid_venues`
+
+Date utils specifically validate `start_date`, `end_date`, and compute `duration_days`. ID generator creates trip/activity/request IDs used across all preference and itinerary operations. All LLM configuration (Gemini primary, Groq fallback) is in `config/settings.py` -- there is no separate `gemini.py`.
 
 ---
 

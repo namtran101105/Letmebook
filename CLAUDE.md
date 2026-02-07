@@ -25,7 +25,7 @@ Build a working prototype that demonstrates:
 - `routes/` - API endpoints (HTTP layer)
 - `controllers/` - Request handlers
 - `services/` - Business logic (NLP extraction, itinerary generation)
-- `clients/` - External API wrappers (Groq, Google Maps, Weather)
+- `clients/` - External API wrappers (Gemini, Groq, Google Maps, Weather)
 - `models/` - Data structures (TripPreferences, Itinerary)
 - `config/` - Configuration management
 - `utils/` - Helper functions
@@ -41,7 +41,7 @@ Build a working prototype that demonstrates:
 
 ### Core Technologies
 - **Backend Framework**: Flask 3.0.0 with Flask-CORS
-- **AI/NLP**: Groq API (llama-3.3-70b-versatile model)
+- **AI/NLP**: Gemini API (primary, via google-genai SDK) / Groq API (fallback, llama-3.3-70b-versatile model)
 - **Language**: Python 3.8+
 - **Database**: MongoDB (planned)
 - **APIs**: Google Maps API, Weather API (planned)
@@ -51,6 +51,7 @@ Build a working prototype that demonstrates:
 ```
 flask==3.0.0
 flask-cors==4.0.0
+google-genai>=1.0.0
 groq>=0.13.0
 httpx>=0.27.0
 python-dotenv==1.0.0
@@ -63,53 +64,74 @@ flake8==7.0.0
 
 ## Data Models
 
-### TripPreferences (Simplified Schema - Phase 1)
+### TripPreferences Schema
 
-Currently implemented fields:
+#### Required Fields (10):
 ```python
 @dataclass
 class TripPreferences:
     # Location
-    city: Optional[str] = None
-    country: Optional[str] = None
-    location_preference: Optional[str] = None  # e.g., "downtown", "near nature"
+    city: str                           # REQUIRED
+    country: str                        # REQUIRED
+    location_preference: str            # REQUIRED - e.g., "downtown", "near nature"
 
     # Dates
-    start_date: Optional[str] = None  # YYYY-MM-DD
-    end_date: Optional[str] = None    # YYYY-MM-DD
-    duration_days: Optional[int] = None
+    start_date: str                     # REQUIRED - YYYY-MM-DD
+    end_date: str                       # REQUIRED - YYYY-MM-DD
+    duration_days: int                  # REQUIRED - must match date range
 
     # Budget
-    budget: Optional[float] = None
-    budget_currency: str = "CAD"
+    budget: float                       # REQUIRED - daily >= $50
+    budget_currency: str                # REQUIRED
 
     # Preferences
-    interests: List[str] = None  # e.g., ["museums", "hiking", "food tours"]
-    pace: Optional[str] = None   # "slow", "moderate", "fast"
+    interests: List[str]                # REQUIRED - min 1 category
+    pace: str                           # REQUIRED - "relaxed"|"moderate"|"packed"
 ```
 
-**Note**: This is a simplified schema for Phase 1. The full MVP schema (from the implementation guide) includes:
-- Starting location (address, hotel, coordinates)
-- Group details (size, children, traveling with)
-- Dietary restrictions
-- Accessibility needs
-- Transportation modes
-- Weather sensitivity
-- Time constraints
-- Must-see/must-avoid venues
+#### Optional Fields (with defaults):
+```python
+    # Defaulted optional fields
+    starting_location: Optional[str] = None   # Default: from location_preference
+    hours_per_day: int = 8                     # Default: 8
+    transportation_modes: List[str] = None     # Default: ["mixed"]
+
+    # Other optional fields
+    group_size: Optional[int] = None
+    group_type: Optional[str] = None
+    children_ages: Optional[List[int]] = None
+    dietary_restrictions: Optional[List[str]] = None
+    accessibility_needs: Optional[List[str]] = None
+    weather_tolerance: Optional[str] = None
+    must_see_venues: Optional[List[str]] = None
+    must_avoid_venues: Optional[List[str]] = None
+```
 
 ## Critical Requirements & Validation Rules
 
 ### Phase 1 (Current): Information Collection
 
-**Required Inputs** (cannot generate itinerary without these):
-1. **Starting location** - User's base in Kingston (accommodation, hotel, area)
-2. **Trip dates** - Start AND end date (YYYY-MM-DD) OR season/month
-3. **Budget** - Total OR daily budget (minimum $50/day for meals + activities)
-4. **Interests** - At least ONE category (history, food, waterfront, nature, arts, museums, shopping, nightlife)
-5. **Available hours per day** - Hours available for activities
-6. **Transportation mode** - At least one: car, transit, walking, mixed
-7. **Pace preference** - Relaxed, moderate, or packed schedule
+**Required Inputs (10 fields)** (cannot generate itinerary without these):
+1. **City** - Destination city (e.g., Kingston)
+2. **Country** - Destination country (e.g., Canada)
+3. **Start date** - Trip start date (YYYY-MM-DD)
+4. **End date** - Trip end date (YYYY-MM-DD)
+5. **Duration days** - Number of days (must match date range)
+6. **Budget** - Total OR daily budget (minimum $50/day for meals + activities)
+7. **Budget currency** - Currency code (default: CAD)
+8. **Interests** - At least ONE category (history, food, waterfront, nature, arts, museums, shopping, nightlife)
+9. **Pace preference** - Relaxed, moderate, or packed schedule
+10. **Location preference** - Area preference (e.g., "downtown", "near waterfront")
+
+**Optional Inputs** (with defaults):
+- **Starting location** - User's base in Kingston (default: derived from location_preference)
+- **Hours per day** - Hours available for activities (default: 8)
+- **Transportation mode** - car, transit, walking, mixed (default: ["mixed"])
+- **Group details** - size, type, children ages
+- **Dietary restrictions** - List of dietary needs
+- **Accessibility needs** - List of accessibility requirements
+- **Weather tolerance** - Weather sensitivity level
+- **Must-see/must-avoid venues** - Venue preferences
 
 **Validation Rules**:
 - **Budget**: Daily budget MUST BE ≥ $50 (for two meals + activities)
@@ -144,7 +166,8 @@ GET /api/health
 Response: {
   "status": "healthy",
   "service": "Kingston Trip Planner",
-  "model": "llama-3.3-70b-versatile",
+  "primary_llm": "gemini",
+  "fallback_llm": "groq",
   "nlp_service_ready": boolean,
   "error": string | null
 }
@@ -185,21 +208,21 @@ Response: {
 ## NLP Extraction Service
 
 ### System Instruction
-The Groq API uses a system instruction that:
+The Gemini API (primary) / Groq API (fallback) uses a system instruction that:
 - Extracts structured information from natural language
-- Focuses on: city, country, dates, budget, interests, pace, location preference
+- Focuses on: city, country, dates, duration_days, budget, budget_currency, interests, pace, location_preference
 - Uses conservative extraction (only explicit/implied info)
 - Returns valid JSON only
 
 ### Extraction Process
 1. User provides natural language input
 2. Service builds extraction prompt with JSON schema
-3. Groq API (llama-3.3-70b-versatile) extracts structured data
+3. Gemini API (primary) or Groq API (fallback) extracts structured data
 4. Service validates and creates TripPreferences object
 5. Validation checks completeness and flags issues
 
 ### JSON Mode
-Uses `response_format={"type": "json_object"}` to ensure structured output from Groq API.
+Uses structured output / JSON mode to ensure structured output from the LLM API.
 
 ## Development Guidelines
 
@@ -234,13 +257,14 @@ travel-planner/
 ├── backend/
 │   ├── app.py                          # Flask application entry point
 │   ├── config/
-│   │   └── settings.py                 # Configuration management
+│   │   └── settings.py                 # Configuration management (includes Gemini + Groq config)
 │   ├── models/
 │   │   └── trip_preferences.py         # TripPreferences dataclass
 │   ├── services/
 │   │   └── nlp_extraction_service.py   # NLP extraction logic
 │   ├── clients/
-│   │   └── groq_client.py              # Groq API wrapper
+│   │   ├── gemini_client.py            # Gemini API wrapper (primary)
+│   │   └── groq_client.py              # Groq API wrapper (fallback)
 │   ├── utils/
 │   │   └── id_generator.py             # Trip ID generation (unused in Phase 1)
 │   ├── requirements.txt                # Python dependencies
@@ -253,12 +277,18 @@ travel-planner/
 └── CLAUDE.md                           # This file
 ```
 
+**Note**: `config/gemini.py` has been removed. All Gemini configuration is merged into `config/settings.py`.
+
 ## Environment Configuration
 
 ### Required Environment Variables
 ```bash
-# Groq API Configuration
-GROQ_API_KEY=your_api_key_here
+# Gemini API Configuration (Primary LLM)
+GEMINI_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.0-flash
+
+# Groq API Configuration (Fallback LLM)
+GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 
 # Flask Configuration
@@ -269,22 +299,31 @@ DEBUG=True
 # NLP Extraction Settings
 EXTRACTION_TEMPERATURE=0.2
 EXTRACTION_MAX_TOKENS=2048
+
+# Itinerary Generation Settings
+ITINERARY_TEMPERATURE=0.7
+ITINERARY_MAX_TOKENS=4096
 ```
 
 ### Setup Instructions
 1. Copy `backend/.env.example` to `backend/.env`
-2. Add your Groq API key from https://console.groq.com/keys
-3. Activate virtual environment: `source venv/bin/activate` (Unix) or `venv\Scripts\activate` (Windows)
-4. Install dependencies: `pip install -r backend/requirements.txt`
-5. Run diagnostics: `python backend/diagnose.py`
-6. Start server: `python backend/app.py`
-7. Open browser: http://localhost:5000
+2. Add your Gemini API key from https://aistudio.google.com/apikey
+3. (Optional) Add your Groq API key from https://console.groq.com/keys for fallback
+4. Activate virtual environment: `source venv/bin/activate` (Unix) or `venv\Scripts\activate` (Windows)
+5. Install dependencies: `pip install -r backend/requirements.txt`
+6. Run diagnostics: `python backend/diagnose.py`
+7. Start server: `python backend/app.py`
+8. Open browser: http://localhost:5000
 
 ## Known Issues & Solutions
 
-### Issue: httpx version conflict with groq
+### Issue: httpx version conflict with groq (fallback client)
 **Symptom**: `Client.__init__() got an unexpected keyword argument 'proxies'`
 **Solution**: Use `groq>=0.13.0` and `httpx>=0.27.0` in requirements.txt
+
+### Issue: Gemini API key not configured
+**Symptom**: `google.api_core.exceptions.PermissionDenied` or missing GEMINI_KEY
+**Solution**: Ensure `GEMINI_KEY` is set in `.env` file. Get key from https://aistudio.google.com/apikey
 
 ### Issue: Empty model files
 **Symptom**: `ImportError: cannot import name 'TripPreferences'`
@@ -329,7 +368,15 @@ EXTRACTION_MAX_TOKENS=2048
 
 ## API Integration Details
 
-### Groq API (Current)
+### Gemini API (Primary)
+- **SDK**: google-genai (`from google import genai`)
+- **Model**: Configured via GEMINI_MODEL in settings.py
+- **Temperature**: 0.2 (extraction) / 0.7 (itinerary generation)
+- **Max Tokens**: 2048 (extraction) / 4096 (itinerary generation)
+- **Configuration**: All Gemini settings in `config/settings.py` (no separate gemini.py)
+- **API Key**: Set via `GEMINI_KEY` in .env
+
+### Groq API (Fallback)
 - **Model**: llama-3.3-70b-versatile
 - **Temperature**: 0.2 (conservative, consistent extractions)
 - **Max Tokens**: 2048
@@ -354,7 +401,7 @@ The hackathon demo must show:
 2. ✅ Validation and completeness scoring (COMPLETE)
 3. ✅ Real-time UI updates (COMPLETE)
 4. ⏳ MongoDB integration (PENDING)
-5. ⏳ Itinerary generation with Groq API (PENDING)
+5. ⏳ Itinerary generation with Gemini API (primary) / Groq API (fallback) (PENDING)
 6. ⏳ Multi-modal transportation planning (PENDING)
 7. ⏳ Real-time weather tracking (PENDING)
 8. ⏳ Real-time budget tracking (PENDING)
@@ -384,15 +431,14 @@ The hackathon demo must show:
 
 ### Information Collection Sequence
 1. **Greeting** - Explain purpose, ask about visit type
-2. **Starting Location** - Where staying/starting from in Kingston
-3. **Dates** - Exact dates (YYYY-MM-DD) OR season/month
-4. **Budget** - Total or daily (validate ≥ $50/day)
-5. **Interests** - Select categories (min 1, optimal 2-4)
-6. **Time Available** - Hours per day for activities
-7. **Transportation** - How getting around (car, transit, walking)
-8. **Pace** - Relaxed, moderate, or packed schedule
-9. **Optional Details** - Group, dietary, accessibility, weather
-10. **Confirmation** - Display summary, validate, proceed
+2. **City & Country** - Destination (e.g., Kingston, Canada)
+3. **Location Preference** - Area preference (downtown, waterfront, near nature)
+4. **Dates & Duration** - Exact dates (YYYY-MM-DD) and duration
+5. **Budget & Currency** - Total or daily (validate >= $50/day), currency
+6. **Interests** - Select categories (min 1, optimal 2-4)
+7. **Pace** - Relaxed, moderate, or packed schedule
+8. **Optional Details** - Starting location, hours/day, transportation, group, dietary, accessibility, weather
+9. **Confirmation** - Display summary, validate, proceed
 
 ### Handling Ambiguous Inputs
 - **Vague location**: Ask for neighborhood or use downtown default
@@ -477,6 +523,7 @@ flake8 backend/
 ## Resources & Documentation
 
 - **Implementation Guide**: `Kingston-Trip-Planner_-MVP-Implementation-Guide-T.md`
+- **Gemini API Docs**: https://ai.google.dev/gemini-api/docs
 - **Groq API Docs**: https://console.groq.com/docs
 - **Flask Documentation**: https://flask.palletsprojects.com/
 - **MongoDB Python Driver**: https://pymongo.readthedocs.io/

@@ -4,7 +4,8 @@
 
 The `routes/` module defines HTTP endpoints for the MonVoyage API. Routes map URLs to controller functions and handle request/response formatting, CORS, and middleware.
 
-**Current Status**: Phase 1 - Trip routes defined, implementation pending  
+**Current Status**: Phase 1 - Trip routes defined, implementation pending
+**LLM**: Gemini (primary) / Groq (fallback) -- all config in `settings.py`
 **Dependencies**: `fastapi`, `pydantic`, `backend.controllers`
 
 ---
@@ -42,12 +43,16 @@ Health check endpoint.
 ```
 
 #### `POST /api/extract`
-Extract trip preferences from natural language.
+Extract trip preferences from natural language using Gemini (primary) / Groq (fallback).
+
+**TripPreferences Required Fields (10):** `city`, `country`, `start_date`, `end_date`, `duration_days`, `budget`, `budget_currency`, `interests`, `pace`, `location_preference`
+
+**TripPreferences Optional Fields:** `starting_location` (default: from `location_preference`), `hours_per_day` (default: 8), `transportation_modes` (default: `["mixed"]`), `group_size`, `group_type`, `children_ages`, `dietary_restrictions`, `accessibility_needs`, `weather_tolerance`, `must_see_venues`, `must_avoid_venues`
 
 **Request**:
 ```json
 {
-  "user_input": "I want to visit Kingston March 15-17 with $200 budget"
+  "user_input": "I want to visit Kingston March 15-17 with $200 budget, interested in history and food, moderate pace"
 }
 ```
 
@@ -56,17 +61,22 @@ Extract trip preferences from natural language.
 {
   "success": true,
   "preferences": {
+    "city": "Kingston",
+    "country": "Canada",
     "start_date": "2026-03-15",
     "end_date": "2026-03-17",
+    "duration_days": 3,
     "budget": 200.0,
-    "daily_budget": 66.67,
-    "interests": []
+    "budget_currency": "CAD",
+    "interests": ["history", "food"],
+    "pace": "moderate",
+    "location_preference": null
   },
   "validation": {
     "valid": false,
-    "issues": ["At least one interest required"],
+    "issues": ["location_preference is required"],
     "warnings": [],
-    "completeness_score": 0.75
+    "completeness_score": 0.90
   }
 }
 ```
@@ -84,17 +94,24 @@ Extract trip preferences from natural language.
 ```
 
 #### `POST /api/refine`
-Refine existing preferences with new information.
+Refine existing preferences with new information using Gemini (primary) / Groq (fallback).
 
 **Request**:
 ```json
 {
   "preferences": {
+    "city": "Kingston",
+    "country": "Canada",
     "start_date": "2026-03-15",
     "end_date": "2026-03-17",
-    "budget": 200.0
+    "duration_days": 3,
+    "budget": 200.0,
+    "budget_currency": "CAD",
+    "interests": ["history"],
+    "pace": "moderate",
+    "location_preference": "downtown"
   },
-  "additional_input": "I'm vegetarian and interested in history"
+  "additional_input": "I'm vegetarian and interested in food too"
 }
 ```
 
@@ -103,17 +120,65 @@ Refine existing preferences with new information.
 {
   "success": true,
   "preferences": {
+    "city": "Kingston",
+    "country": "Canada",
     "start_date": "2026-03-15",
     "end_date": "2026-03-17",
+    "duration_days": 3,
     "budget": 200.0,
-    "interests": ["history"],
+    "budget_currency": "CAD",
+    "interests": ["history", "food"],
+    "pace": "moderate",
+    "location_preference": "downtown",
     "dietary_restrictions": ["vegetarian"]
   },
   "validation": {
     "valid": true,
     "issues": [],
     "warnings": [],
-    "completeness_score": 0.90
+    "completeness_score": 1.0
+  }
+}
+```
+
+#### `POST /api/itinerary/generate`
+Generate a trip itinerary from validated preferences using Gemini (primary) / Groq (fallback).
+
+**Request**:
+```json
+{
+  "preferences": {
+    "city": "Kingston",
+    "country": "Canada",
+    "start_date": "2026-03-15",
+    "end_date": "2026-03-17",
+    "duration_days": 3,
+    "budget": 200.0,
+    "budget_currency": "CAD",
+    "interests": ["history", "food"],
+    "pace": "moderate",
+    "location_preference": "downtown"
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "itinerary": {
+    "days": [
+      {
+        "date": "2026-03-15",
+        "activities": [...]
+      }
+    ],
+    "budget_breakdown": {...}
+  },
+  "validation": {
+    "valid": true,
+    "issues": [],
+    "warnings": []
   }
 }
 ```
@@ -177,8 +242,14 @@ class ExtractRequest(BaseModel):
 **RefineRequest**:
 ```python
 class RefineRequest(BaseModel):
-    preferences: Dict[str, Any]
+    preferences: Dict[str, Any]  # Must contain the 10 required TripPreferences fields
     additional_input: str
+```
+
+**GenerateItineraryRequest**:
+```python
+class GenerateItineraryRequest(BaseModel):
+    preferences: Dict[str, Any]  # Validated TripPreferences with all 10 required fields
 ```
 
 **TripResponse**:
@@ -187,8 +258,15 @@ class TripResponse(BaseModel):
     success: bool
     preferences: Optional[Dict[str, Any]] = None
     validation: Optional[Dict[str, Any]] = None
+    itinerary: Optional[Dict[str, Any]] = None
     error: Optional[Dict[str, Any]] = None
 ```
+
+### TripPreferences Required Fields (10)
+`city`, `country`, `start_date`, `end_date`, `duration_days`, `budget`, `budget_currency`, `interests`, `pace`, `location_preference`
+
+### TripPreferences Optional Fields
+`starting_location` (default: from `location_preference`), `hours_per_day` (default: 8), `transportation_modes` (default: `["mixed"]`), `group_size`, `group_type`, `children_ages`, `dietary_restrictions`, `accessibility_needs`, `weather_tolerance`, `must_see_venues`, `must_avoid_venues`
 
 ---
 
@@ -273,17 +351,46 @@ def test_extract_preferences():
 # Health check
 curl http://localhost:8000/api/health
 
-# Extract preferences
+# Extract preferences (Gemini primary / Groq fallback)
 curl -X POST http://localhost:8000/api/extract \
   -H "Content-Type: application/json" \
-  -d '{"user_input": "I want to visit Kingston March 15-17, budget $200, interested in history and food"}'
+  -d '{"user_input": "I want to visit Kingston March 15-17, budget $200 CAD, interested in history and food, moderate pace, downtown area"}'
 
 # Refine preferences
 curl -X POST http://localhost:8000/api/refine \
   -H "Content-Type: application/json" \
   -d '{
-    "preferences": {...},
+    "preferences": {
+      "city": "Kingston",
+      "country": "Canada",
+      "start_date": "2026-03-15",
+      "end_date": "2026-03-17",
+      "duration_days": 3,
+      "budget": 200.0,
+      "budget_currency": "CAD",
+      "interests": ["history", "food"],
+      "pace": "moderate",
+      "location_preference": "downtown"
+    },
     "additional_input": "I'\''m vegetarian"
+  }'
+
+# Generate itinerary (requires all 10 required fields)
+curl -X POST http://localhost:8000/api/itinerary/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "preferences": {
+      "city": "Kingston",
+      "country": "Canada",
+      "start_date": "2026-03-15",
+      "end_date": "2026-03-17",
+      "duration_days": 3,
+      "budget": 200.0,
+      "budget_currency": "CAD",
+      "interests": ["history", "food"],
+      "pace": "moderate",
+      "location_preference": "downtown"
+    }
   }'
 ```
 
@@ -292,12 +399,13 @@ curl -X POST http://localhost:8000/api/refine \
 ```python
 import requests
 
-# Extract
+# Extract (uses Gemini primary / Groq fallback)
 response = requests.post(
     "http://localhost:8000/api/extract",
-    json={"user_input": "Visit Kingston..."}
+    json={"user_input": "Visit Kingston March 15-17, $200 CAD budget, history and food, moderate pace, downtown"}
 )
 data = response.json()
+# data["preferences"] will contain the 10 required fields + any optional fields extracted
 
 # Refine
 response = requests.post(
@@ -307,20 +415,29 @@ response = requests.post(
         "additional_input": "I'm vegetarian"
     }
 )
+
+# Generate itinerary (requires all 10 required fields populated)
+response = requests.post(
+    "http://localhost:8000/api/itinerary/generate",
+    json={"preferences": data["preferences"]}
+)
+itinerary = response.json()["itinerary"]
 ```
 
 ### Using JavaScript fetch
 
 ```javascript
-// Extract
+// Extract (uses Gemini primary / Groq fallback)
 const response = await fetch('http://localhost:8000/api/extract', {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({
-    user_input: "Visit Kingston March 15-17..."
+    user_input: "Visit Kingston March 15-17, $200 CAD, history and food, moderate pace, downtown"
   })
 });
 const data = await response.json();
+// data.preferences contains: city, country, start_date, end_date,
+// duration_days, budget, budget_currency, interests, pace, location_preference
 ```
 
 ---
@@ -352,7 +469,7 @@ const data = await response.json();
 **Solution**:
 1. Check server logs for traceback
 2. Verify all environment variables are set
-3. Check external API connectivity (Groq)
+3. Check external API connectivity (Gemini primary, Groq fallback)
 
 ---
 
@@ -380,7 +497,7 @@ const data = await response.json();
 ## Future Enhancements (Phase 2/3)
 
 ### Phase 2
-- [ ] Add itinerary generation endpoint
+- [x] Add itinerary generation endpoint (`POST /api/itinerary/generate`)
 - [ ] Add venue search endpoint
 - [ ] Add weather check endpoint
 - [ ] Implement request rate limiting
@@ -398,12 +515,12 @@ const data = await response.json();
 ### Complete Endpoint List
 
 **Phase 1 (Current)**:
-- `GET /api/health` - Health check
-- `POST /api/extract` - Extract preferences
-- `POST /api/refine` - Refine preferences
+- `GET /api/health` - Health check (reports Gemini/Groq LLM status)
+- `POST /api/extract` - Extract preferences (10 required fields via Gemini/Groq)
+- `POST /api/refine` - Refine preferences (Gemini/Groq)
+- `POST /api/itinerary/generate` - Generate itinerary from validated preferences (Gemini/Groq)
 
 **Phase 2 (Planned)**:
-- `POST /api/itinerary/generate` - Generate itinerary
 - `GET /api/venues/search` - Search venues
 - `GET /api/weather/forecast` - Get weather forecast
 

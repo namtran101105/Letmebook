@@ -32,12 +32,12 @@ This guide describes all documentation files created for the MonVoyage backend. 
 ### 2. Module Documentation (Config)
 
 #### `backend/config/CLAUDE.md`
-**What it does**: Agent instructions for implementing the configuration module  
+**What it does**: Agent instructions for implementing the configuration module
 **Contribution to project**:
 - Specifies how to load environment variables (.env file handling)
-- Defines settings structure and validation
+- Defines settings structure and validation for both Gemini (primary) and Groq (fallback) LLMs
 - Ensures API keys are never committed to version control
-- Provides exact implementation spec for settings.py
+- Provides exact implementation spec for settings.py (Gemini config merged here; no separate gemini.py)
 
 **Key sections**: Settings class specification, environment variables, validation logic, security rules
 
@@ -80,14 +80,14 @@ This guide describes all documentation files created for the MonVoyage backend. 
 ### 4. Module Documentation (Services)
 
 #### `backend/services/CLAUDE.md`
-**What it does**: Agent instructions for implementing business logic services (NLP extraction)  
+**What it does**: Agent instructions for implementing business logic services (NLP extraction)
 **Contribution to project**:
 - Specifies NLPExtractionService implementation
-- Defines Groq API integration patterns
+- Defines Gemini API (primary) / Groq API (fallback) integration patterns
 - Establishes conservative extraction rules (never guess)
 - Provides prompt engineering guidelines for LLM
 
-**Key sections**: Service specification, Groq integration, extraction logic, refinement logic, error handling
+**Key sections**: Service specification, Gemini/Groq integration, extraction logic, refinement logic, error handling
 
 #### `backend/services/README.md`
 **What it does**: Human-oriented documentation for services layer  
@@ -104,24 +104,24 @@ This guide describes all documentation files created for the MonVoyage backend. 
 ### 5. Module Documentation (Clients)
 
 #### `backend/clients/CLAUDE.md`
-**What it does**: Agent instructions for implementing external API clients (Groq)  
+**What it does**: Agent instructions for implementing external API clients (Gemini primary, Groq fallback)
 **Contribution to project**:
-- Specifies GroqClient async HTTP wrapper
+- Specifies GeminiClient (primary) and GroqClient (fallback) wrappers
 - Defines retry logic with exponential backoff (1s, 2s, 4s)
 - Establishes error handling patterns (retry 5xx, don't retry 4xx)
 - Ensures API keys are redacted in logs
 
-**Key sections**: GroqClient specification, retry strategy, error handling, API key security
+**Key sections**: GeminiClient specification, GroqClient specification, retry strategy, error handling, API key security
 
 #### `backend/clients/README.md`
-**What it does**: Human-oriented documentation for API clients  
+**What it does**: Human-oriented documentation for API clients (Gemini primary, Groq fallback)
 **Contribution to project**:
-- Guides developers on configuring external API access
+- Guides developers on configuring Gemini (primary) and Groq (fallback) API access
 - Explains retry strategy and when it triggers
 - Documents error types and handling
 - Shows expected response times and timeouts
 
-**Key sections**: Client overview, retry configuration, error handling, usage examples
+**Key sections**: Client overview, Gemini/Groq configuration, retry configuration, error handling, usage examples
 
 ---
 
@@ -338,7 +338,7 @@ backend/
 │   └── requirements.PRD.md     # Dependencies requirements
 ├── config/
 │   ├── CLAUDE.md               # Agent instructions
-│   └── README.md               # Human documentation
+│   └── README.md               # Human documentation (note: gemini.py removed, merged into settings.py)
 ├── models/
 │   ├── CLAUDE.md               # Agent instructions
 │   └── README.md               # Human documentation

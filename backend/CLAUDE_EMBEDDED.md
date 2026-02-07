@@ -10,7 +10,7 @@
 
 All backend modules must support these features:
 
-1. **Natural Language Extraction** - Extract structured trip preferences from user input via Groq/Gemini API
+1. **Natural Language Extraction** - Extract structured trip preferences from user input via Gemini API (primary) / Groq API (fallback)
 2. **MongoDB Integration** - All persistence via MongoDB collections (no file-based storage in production)
 3. **Multi-Modal Transportation** - Support car, Kingston Transit, walking, and mixed modes
 4. **Real-Time Weather Tracking** - Weather API integration with outdoor activity warnings
@@ -26,26 +26,36 @@ All backend modules must support these features:
 
 ```python
 {
-  "starting_location": str,          # REQUIRED - hotel/address/area in Kingston
-  "start_date": str,                  # REQUIRED - YYYY-MM-DD format
-  "end_date": str,                    # REQUIRED - YYYY-MM-DD format
-  "budget": float,                    # REQUIRED - total OR daily (≥ $50/day)
-  "interests": List[str],             # REQUIRED - min 1 category
-  "hours_per_day": int,               # REQUIRED - 2-12 hours
-  "transportation_modes": List[str],  # REQUIRED - min 1 mode
-  "pace": str                         # REQUIRED - "relaxed"|"moderate"|"packed"
+  "city": str,                          # REQUIRED
+  "country": str,                       # REQUIRED
+  "start_date": str,                    # REQUIRED - YYYY-MM-DD
+  "end_date": str,                      # REQUIRED - YYYY-MM-DD
+  "duration_days": int,                 # REQUIRED - must match date range
+  "budget": float,                      # REQUIRED - daily ≥ $50
+  "budget_currency": str,               # REQUIRED
+  "interests": List[str],               # REQUIRED - min 1 category
+  "pace": str,                          # REQUIRED - "relaxed"|"moderate"|"packed"
+  "location_preference": str            # REQUIRED
 }
 ```
 
-### Important Optional Inputs:
-- `group_size`: int
-- `group_type`: "solo" | "couple" | "family" | "friends"
-- `children_ages`: List[int]
-- `dietary_restrictions`: List[str]
-- `accessibility_needs`: List[str]
-- `weather_tolerance`: str
-- `must_see_venues`: List[str]
-- `must_avoid_venues`: List[str]
+### Optional Inputs (with defaults):
+
+```python
+{
+  "starting_location": str,             # Default: from location_preference
+  "hours_per_day": int,                 # Default: 8
+  "transportation_modes": List[str],    # Default: ["mixed"]
+  "group_size": int,
+  "group_type": str,
+  "children_ages": List[int],
+  "dietary_restrictions": List[str],
+  "accessibility_needs": List[str],
+  "weather_tolerance": str,
+  "must_see_venues": List[str],
+  "must_avoid_venues": List[str]
+}
+```
 
 ---
 
@@ -608,7 +618,7 @@ except Exception as e:
 1. All dates/times use ISO-8601 format and UTC timezone
 2. Currency is CAD unless specified
 3. Kingston, Ontario is the only supported city for MVP
-4. Groq API is primary NLP provider (Gemini as fallback)
+4. Gemini API is primary LLM (Groq as fallback)
 5. Google Maps API is used for geocoding and routing
 
 ### Open Questions

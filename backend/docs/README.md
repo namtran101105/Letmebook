@@ -1,7 +1,7 @@
 # MonVoyage Backend Documentation Index
 
-**Project**: Kingston Trip Planner MVP  
-**Phase**: 1 (NLP Extraction & Itinerary Generation)  
+**Project**: Kingston Trip Planner MVP
+**Phase**: 1 (NLP Extraction & Itinerary Generation)
 **Last Updated**: 2026-02-07
 
 ---
@@ -27,10 +27,10 @@ This directory contains comprehensive documentation for the MonVoyage backend. D
 
 - [Config Module](../config/README.md) - Environment variables, settings management
 - [Models Module](../models/README.md) - Data structures, validation
-- [Services Module](../services/README.md) - Business logic, NLP extraction
+- [Services Module](../services/README.md) - Business logic, NLP extraction, itinerary generation
 - [Controllers Module](../controllers/README.md) - Request orchestration
 - [Routes Module](../routes/README.md) - HTTP endpoints, API documentation
-- [Clients Module](../clients/README.md) - External API wrappers (Groq)
+- [Clients Module](../clients/README.md) - External API wrappers (Gemini, Groq)
 - [Utils Module](../utils/README.md) - ID generation, date handling
 - [Storage Module](../storage/README.md) - Data persistence (JSON/MongoDB)
 
@@ -104,14 +104,20 @@ Models (data validation)
 
 | Module | Purpose | Examples |
 |--------|---------|----------|
-| **routes** | HTTP endpoints, request/response | `/api/extract`, `/api/refine` |
-| **controllers** | Orchestrate service calls | `extract_preferences()` |
+| **routes** | HTTP endpoints, request/response | `/api/extract`, `/api/refine`, `/api/itinerary` |
+| **controllers** | Orchestrate service calls | `extract_preferences()`, `generate_itinerary()` |
 | **services** | Business logic | NLP extraction, itinerary generation |
-| **clients** | External API wrappers | Groq API, Google Maps (Phase 2) |
+| **clients** | External API wrappers | Gemini API (primary), Groq API (fallback) |
 | **models** | Data structures, validation | `TripPreferences`, `Itinerary` |
 | **storage** | Data persistence | JSON repos (Phase 1), MongoDB (Phase 2) |
 | **utils** | Shared utilities | ID generation, date validation |
-| **config** | Settings, env vars | API keys, app configuration |
+| **config** | Settings, env vars | API keys (Gemini + Groq), app configuration |
+
+### LLM Strategy
+
+- **Gemini** (google-genai SDK): Primary LLM for both NLP extraction and itinerary generation
+- **Groq** (llama-3.3-70b-versatile): Available as alternative/fallback LLM
+- Both configured in `backend/config/settings.py`
 
 ---
 
@@ -120,7 +126,17 @@ Models (data validation)
 ### Non-Negotiable Features
 
 1. **Budget Validation**: Daily budget minimum $50 CAD
-2. **Required Fields**: starting_location, start_date, end_date, budget, interests (min 1), hours_per_day, transportation_modes (min 1), pace
+2. **Required Fields (10)**:
+   - `city` — destination city
+   - `country` — destination country
+   - `location_preference` — area preference
+   - `start_date` — trip start (YYYY-MM-DD)
+   - `end_date` — trip end (YYYY-MM-DD)
+   - `duration_days` — must match date range
+   - `budget` — total trip budget
+   - `budget_currency` — currency code
+   - `interests` — min 1, max 6 categories
+   - `pace` — relaxed, moderate, or packed
 3. **Pace Parameters**:
    - **Relaxed**: 2-3 activities/day, 90-120 min each, 20-min buffers
    - **Moderate**: 4-5 activities/day, 60-90 min each, 15-min buffers
@@ -153,7 +169,7 @@ pip install -r backend/requirements.txt
 
 # Set up environment
 cp .env.example .env
-# Edit .env and add GROQ_API_KEY
+# Edit .env and add GEMINI_KEY (required) and optionally GROQ_API_KEY
 
 # Verify setup
 python backend/diagnose.py
@@ -256,8 +272,8 @@ python backend/diagnose.py
 ```
 
 **API connectivity**:
-- Check GROQ_API_KEY in .env
-- Test: `curl https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"`
+- Check `GEMINI_KEY` in `.env`
+- Optionally check `GROQ_API_KEY` in `.env` for fallback LLM
 
 **Test failures**:
 ```bash
@@ -273,18 +289,18 @@ pytest --pdb backend/tests/
 ## Phase Roadmap
 
 ### Phase 1 (Current - MVP)
-✅ NLP extraction service  
-✅ Trip preference validation  
-✅ JSON file storage  
-✅ FastAPI routes  
-✅ Comprehensive documentation
+- [x] NLP extraction service
+- [x] Trip preference validation (10 required fields)
+- [x] Itinerary generation service (Gemini-powered)
+- [x] JSON file storage
+- [x] FastAPI routes
+- [x] Comprehensive documentation
 
 ### Phase 2 (Planned)
-- [ ] Itinerary generation
 - [ ] MongoDB integration
 - [ ] Google Maps API integration
 - [ ] Weather API integration
-- [ ] Budget tracking
+- [ ] Real-time budget tracking
 
 ### Phase 3 (Future)
 - [ ] Apache Airflow scheduling
@@ -325,6 +341,7 @@ pytest --pdb backend/tests/
 
 - [FastAPI Docs](https://fastapi.tiangolo.com/)
 - [Pydantic Docs](https://docs.pydantic.dev/)
+- [Google Gemini API Docs](https://ai.google.dev/docs)
 - [Groq API Docs](https://console.groq.com/docs)
 - [Pytest Docs](https://docs.pytest.org/)
 
@@ -333,7 +350,7 @@ pytest --pdb backend/tests/
 - [Frontend Documentation](../../frontend/README.md)
 - [Airflow DAGs](../../airflow/dags/)
 - [Project README](../../README.md)
-- [Implementation Guide](../../Kingston%20Trip%20Planner_%20MVP%20Implementation%20Guide%20(T.md)
+- [NLP Setup Guide](../../README_NLP_SETUP.md)
 
 ---
 
@@ -350,7 +367,7 @@ pytest --pdb backend/tests/
 
 ---
 
-**Last Updated**: 2026-02-07  
-**Maintained By**: Backend Team  
-**Total Docs**: 22 files (11 CLAUDE.md, 8 README.md, 4 PRD.md, 1 index)  
+**Last Updated**: 2026-02-07
+**Maintained By**: Backend Team
+**Total Docs**: 22 files (11 CLAUDE.md, 8 README.md, 4 PRD.md, 1 index)
 **Coverage**: All Phase 1 modules documented

@@ -4,8 +4,9 @@
 
 The `controllers/` module contains request handlers that orchestrate business logic. Controllers sit between HTTP routes and service layer, coordinating operations without implementing business logic themselves.
 
-**Current Status**: Phase 1 - Trip controller defined, implementation pending  
-**Dependencies**: `backend.services`, `backend.models`
+**Current Status**: Phase 1 - Trip controller defined, implementation pending
+**LLM**: Gemini (primary) / Groq (fallback) -- all config in `settings.py`
+**Dependencies**: `backend.services`, `backend.models`, `backend.config`
 
 ---
 
@@ -23,12 +24,16 @@ The `controllers/` module contains request handlers that orchestrate business lo
 
 ### `trip_controller.py` (Phase 1 - Current)
 
-Handles trip preference extraction and refinement.
+Handles trip preference extraction and refinement using Gemini (primary) / Groq (fallback).
+
+**TripPreferences Required Fields (10):** `city`, `country`, `start_date`, `end_date`, `duration_days`, `budget`, `budget_currency`, `interests`, `pace`, `location_preference`
+
+**TripPreferences Optional Fields:** `starting_location` (default: from `location_preference`), `hours_per_day` (default: 8), `transportation_modes` (default: `["mixed"]`), `group_size`, `group_type`, `children_ages`, `dietary_restrictions`, `accessibility_needs`, `weather_tolerance`, `must_see_venues`, `must_avoid_venues`
 
 **Key Methods**:
 
 #### `extract_preferences(user_input, request_id)`
-Extracts trip preferences from natural language.
+Extracts trip preferences from natural language via Gemini (primary) / Groq (fallback).
 
 **Example**:
 ```python
@@ -36,43 +41,89 @@ from backend.controllers.trip_controller import TripController
 
 controller = TripController()
 result = await controller.extract_preferences(
-    user_input="I want to visit Kingston March 15-17, budget $200",
+    user_input="I want to visit Kingston March 15-17, budget $200 CAD, history and food, moderate pace, downtown",
     request_id="req_20260207_143052_abc123"
 )
 
 # Returns:
 {
     "preferences": {
+        "city": "Kingston",
+        "country": "Canada",
         "start_date": "2026-03-15",
         "end_date": "2026-03-17",
+        "duration_days": 3,
         "budget": 200.0,
-        "daily_budget": 66.67
+        "budget_currency": "CAD",
+        "interests": ["history", "food"],
+        "pace": "moderate",
+        "location_preference": "downtown"
     },
     "validation": {
-        "valid": False,
-        "issues": ["At least one interest required"],
+        "valid": True,
+        "issues": [],
         "warnings": [],
-        "completeness_score": 0.75
+        "completeness_score": 1.0
     }
 }
 ```
 
 #### `refine_preferences(existing_preferences, additional_input, request_id)`
-Refines existing preferences with new information.
+Refines existing preferences with new information via Gemini (primary) / Groq (fallback).
 
 **Example**:
 ```python
 result = await controller.refine_preferences(
     existing_preferences={
+        "city": "Kingston",
+        "country": "Canada",
         "start_date": "2026-03-15",
         "end_date": "2026-03-17",
-        "budget": 200.0
+        "duration_days": 3,
+        "budget": 200.0,
+        "budget_currency": "CAD",
+        "interests": ["history"],
+        "pace": "moderate",
+        "location_preference": "downtown"
     },
-    additional_input="I'm vegetarian and interested in history",
+    additional_input="I'm vegetarian and also interested in food",
     request_id="req_20260207_143053_def456"
 )
 
-# Returns updated preferences with dietary_restrictions and interests
+# Returns updated preferences with dietary_restrictions (optional) and updated interests
+```
+
+### `itinerary_controller.py` (Phase 1 - Added)
+
+Handles itinerary generation using Gemini (primary) / Groq (fallback).
+
+**Key Methods**:
+
+#### `generate_itinerary(preferences, request_id)`
+Generates a trip itinerary from validated preferences (all 10 required fields must be present).
+
+**Example**:
+```python
+from backend.controllers.itinerary_controller import ItineraryController
+
+controller = ItineraryController()
+result = await controller.generate_itinerary(
+    preferences={
+        "city": "Kingston",
+        "country": "Canada",
+        "start_date": "2026-03-15",
+        "end_date": "2026-03-17",
+        "duration_days": 3,
+        "budget": 200.0,
+        "budget_currency": "CAD",
+        "interests": ["history", "food"],
+        "pace": "moderate",
+        "location_preference": "downtown"
+    },
+    request_id="req_20260207_143054_ghi789"
+)
+
+# Returns itinerary with days, activities, and budget breakdown
 ```
 
 ---
@@ -97,9 +148,9 @@ result = await controller.refine_preferences(
 ### Design Pattern
 
 ```
-Route → Controller → Service → External API/Database
+Route → Controller → Service → Gemini (primary) / Groq (fallback)
          ↓
-         ↓ Orchestration
+         ↓ Orchestration (validate 10 required fields, apply optional defaults)
          ↓
          ↓ Response Formatting
          ↓
@@ -190,18 +241,26 @@ async def test_extract_preferences_success(mock_nlp_service):
     controller = TripController()
     controller.nlp_service = mock_nlp_service
     
-    # Setup mock
-    mock_prefs = TripPreferences(start_date="2026-03-15", ...)
+    # Setup mock with all 10 required fields
+    mock_prefs = TripPreferences(
+        city="Kingston", country="Canada",
+        start_date="2026-03-15", end_date="2026-03-17",
+        duration_days=3, budget=200.0, budget_currency="CAD",
+        interests=["history"], pace="moderate",
+        location_preference="downtown"
+    )
     mock_nlp_service.extract_preferences.return_value = mock_prefs
-    
+
     # Call controller
     result = await controller.extract_preferences(
         user_input="Visit Kingston...",
         request_id="req-123"
     )
-    
-    # Assertions
+
+    # Assertions - verify required fields
+    assert result["preferences"]["city"] == "Kingston"
     assert result["preferences"]["start_date"] == "2026-03-15"
+    assert result["preferences"]["duration_days"] == 3
     assert "validation" in result
 ```
 
@@ -367,7 +426,7 @@ return {
 ## Future Enhancements (Phase 2/3)
 
 ### Phase 2
-- [ ] Itinerary controller for generation/retrieval
+- [x] Itinerary controller for generation/retrieval (Gemini primary / Groq fallback)
 - [ ] Venue controller for search operations
 - [ ] Weather controller for forecast integration
 
@@ -384,9 +443,10 @@ return {
 - `routes/trip_routes.py` - HTTP endpoints
 
 ### Uses
-- `services/nlp_extraction_service.py` - Business logic
-- `models/trip_preferences.py` - Data models
-- `clients/groq_client.py` - External APIs
+- `services/nlp_extraction_service.py` - NLP extraction logic (Gemini primary / Groq fallback)
+- `services/itinerary_service.py` - Itinerary generation logic (Gemini primary / Groq fallback)
+- `models/trip_preferences.py` - Data models (10 required + optional fields)
+- `config/settings.py` - All LLM configuration (Gemini + Groq, no separate gemini.py)
 - `storage/trip_json_repo.py` - Data persistence (Phase 2)
 
 ---
@@ -419,8 +479,12 @@ async def extract_preferences(self, user_input, request_id):
 ### 3. Service implements logic
 ```python
 async def extract_preferences(self, user_input, request_id):
-    logger.debug("Calling Groq API", extra={"request_id": request_id})
-    response = await self.groq_client.chat_completion(...)
+    logger.debug("Calling Gemini API (primary)", extra={"request_id": request_id})
+    try:
+        response = await self.gemini_client.chat_completion(...)
+    except Exception:
+        logger.warning("Gemini failed, falling back to Groq", extra={"request_id": request_id})
+        response = await self.groq_client.chat_completion(...)
     preferences = self._parse_response(response)
     return preferences
 ```

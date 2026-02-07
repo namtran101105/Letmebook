@@ -11,12 +11,12 @@
 ## Module Responsibilities
 
 ### Current (Phase 1)
-1. **NLP Extraction** (`nlp_extraction_service.py`) - Extract structured TripPreferences from natural language user input using Groq API
+1. **NLP Extraction** (`nlp_extraction_service.py`) - Extract structured TripPreferences from natural language user input using Gemini (primary) or Groq (fallback)
 2. Preference refinement (updating existing preferences with new input)
 3. Validation orchestration (call model validation, handle results)
+4. **Itinerary Generation** (`itinerary_service.py`) - Generate feasible daily schedules from validated preferences using Gemini
 
 ### Planned (Phase 2/3)
-4. **Itinerary Generation** (`itinerary_service.py`) - Generate feasible daily schedules from validated preferences
 5. **Budget Tracking** (`budget_service.py`) - Real-time spending monitor with overspend alerts
 6. **Schedule Adaptation** (`adaptation_service.py`) - Re-optimize itinerary when users run late/skip activities
 7. **Weather Integration** (`weather_service.py`) - Fetch forecasts and warn about outdoor activities
@@ -28,83 +28,108 @@
 
 ### `nlp_extraction_service.py` (Phase 1 - Current)
 
-**Purpose**: Extract structured trip preferences from natural language using Groq LLM.
+**Purpose**: Extract structured trip preferences from natural language using Gemini (primary) or Groq (fallback) LLM.
 
 **Key Functions**:
 ```python
 class NLPExtractionService:
     """Natural language extraction for trip preferences"""
-    
-    def __init__(self, groq_client: GroqClient):
-        self.groq_client = groq_client
+
+    def __init__(self, gemini_client: GeminiClient, groq_client: Optional[GroqClient] = None):
+        self.gemini_client = gemini_client
+        self.groq_client = groq_client  # Optional fallback
         self.logger = logging.getLogger(__name__)
-    
+
     async def extract_preferences(
-        self, 
+        self,
         user_input: str,
         request_id: str
     ) -> TripPreferences:
         """
         Extract trip preferences from natural language.
-        
+
+        Uses Gemini as primary LLM, falls back to Groq if Gemini fails.
+
         Args:
             user_input: Raw user message (e.g., "I want to visit Kingston March 15-17...")
             request_id: UUID for request correlation
-        
+
         Returns:
             TripPreferences object with extracted data
-        
+
         Raises:
-            ExternalAPIError: If Groq API fails
+            ExternalAPIError: If both Gemini and Groq APIs fail
             ValidationError: If extracted data invalid
         """
         self.logger.info("Starting NLP extraction", extra={
             "request_id": request_id,
             "input_length": len(user_input)
         })
-        
+
         try:
-            # Build extraction prompt
+            # Try Gemini first (primary)
             prompt = self._build_extraction_prompt(user_input)
-            
-            # Call Groq API with JSON mode
-            response = await self.groq_client.chat_completion(
-                messages=[
-                    {"role": "system", "content": self._get_system_instruction()},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-                max_tokens=2048
+            response_text = await self.gemini_client.generate_content(
+                prompt=prompt,
+                system_instruction=self._get_system_instruction(),
+                temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
+                max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS,
+                request_id=request_id
             )
-            
+
             # Parse JSON response
-            extracted_data = json.loads(response.choices[0].message.content)
-            
+            extracted_data = json.loads(response_text)
+
             # Create TripPreferences
             preferences = TripPreferences.from_dict(extracted_data)
-            
-            self.logger.info("NLP extraction successful", extra={
+
+            self.logger.info("NLP extraction successful (Gemini)", extra={
                 "request_id": request_id,
                 "fields_extracted": len([v for v in extracted_data.values() if v])
             })
-            
+
             return preferences
-            
-        except json.JSONDecodeError as e:
-            self.logger.error("Invalid JSON from Groq", extra={
+
+        except Exception as gemini_error:
+            self.logger.warning("Gemini extraction failed, trying Groq fallback", extra={
                 "request_id": request_id,
-                "error": str(e)
-            }, exc_info=True)
-            raise ExternalAPIError("Groq", "Invalid JSON response")
-            
-        except Exception as e:
-            self.logger.error("NLP extraction failed", extra={
-                "request_id": request_id,
-                "error_type": type(e).__name__
-            }, exc_info=True)
-            raise
-    
+                "gemini_error": str(gemini_error)
+            })
+
+            if not self.groq_client:
+                raise
+
+            # Fall back to Groq
+            try:
+                response = await self.groq_client.chat_completion(
+                    messages=[
+                        {"role": "system", "content": self._get_system_instruction()},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=settings.GROQ_TEMPERATURE,
+                    max_tokens=settings.GROQ_MAX_TOKENS,
+                    request_id=request_id
+                )
+
+                extracted_data = json.loads(response["choices"][0]["message"]["content"])
+                preferences = TripPreferences.from_dict(extracted_data)
+
+                self.logger.info("NLP extraction successful (Groq fallback)", extra={
+                    "request_id": request_id,
+                    "fields_extracted": len([v for v in extracted_data.values() if v])
+                })
+
+                return preferences
+
+            except Exception as groq_error:
+                self.logger.error("Both Gemini and Groq extraction failed", extra={
+                    "request_id": request_id,
+                    "gemini_error": str(gemini_error),
+                    "groq_error": str(groq_error)
+                }, exc_info=True)
+                raise
+
     async def refine_preferences(
         self,
         existing_preferences: TripPreferences,
@@ -113,12 +138,12 @@ class NLPExtractionService:
     ) -> TripPreferences:
         """
         Update existing preferences with new information.
-        
+
         Args:
             existing_preferences: Previously extracted preferences
             additional_input: New user input (e.g., "I'm vegetarian")
             request_id: UUID for request correlation
-        
+
         Returns:
             Updated TripPreferences
         """
@@ -126,67 +151,69 @@ class NLPExtractionService:
             "request_id": request_id,
             "trip_id": existing_preferences.trip_id
         })
-        
+
         try:
             # Build refinement prompt with existing data
             prompt = self._build_refinement_prompt(
                 existing_preferences.to_dict(),
                 additional_input
             )
-            
-            response = await self.groq_client.chat_completion(
-                messages=[
-                    {"role": "system", "content": self._get_system_instruction()},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-                max_tokens=2048
+
+            # Try Gemini first
+            response_text = await self.gemini_client.generate_content(
+                prompt=prompt,
+                system_instruction=self._get_system_instruction(),
+                temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
+                max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS,
+                request_id=request_id
             )
-            
+
             # Parse and merge with existing
-            updated_data = json.loads(response.choices[0].message.content)
+            updated_data = json.loads(response_text)
             updated_preferences = TripPreferences.from_dict(updated_data)
-            
+
             # Preserve trip_id and timestamps
             updated_preferences.trip_id = existing_preferences.trip_id
             updated_preferences.created_at = existing_preferences.created_at
-            
-            self.logger.info("Preferences refined", extra={
+
+            self.logger.info("Preferences refined (Gemini)", extra={
                 "request_id": request_id,
                 "trip_id": updated_preferences.trip_id
             })
-            
+
             return updated_preferences
-            
+
         except Exception as e:
             self.logger.error("Preference refinement failed", extra={
                 "request_id": request_id
             }, exc_info=True)
             raise
-    
+
     def _build_extraction_prompt(self, user_input: str) -> str:
         """Build extraction prompt with JSON schema"""
         schema = {
-            "starting_location": "string or null",
             "city": "string (default: Kingston)",
             "country": "string (default: Canada)",
+            "location_preference": "string or null (e.g., 'downtown', 'waterfront')",
+            "starting_location": "string or null",
             "start_date": "string YYYY-MM-DD or null",
             "end_date": "string YYYY-MM-DD or null",
+            "duration_days": "number or null",
             "budget": "number or null",
+            "budget_currency": "string (default: CAD)",
             "interests": "array of strings",
-            "hours_per_day": "number or null",
-            "transportation_modes": "array of strings",
             "pace": "string (relaxed|moderate|packed) or null",
+            "hours_per_day": "number (default: 8) or null",
+            "transportation_modes": "array of strings (default: ['mixed'])",
             "group_size": "number or null",
             "group_type": "string or null",
             "dietary_restrictions": "array of strings",
             "accessibility_needs": "array of strings",
             "weather_tolerance": "string or null",
             "must_see_venues": "array of strings",
-            "location_preference": "string or null"
+            "must_avoid_venues": "array of strings"
         }
-        
+
         return f"""Extract travel preferences from this user message:
 
 User message: "{user_input}"
@@ -202,13 +229,14 @@ Rules:
 - For interests, use: history, food, waterfront, nature, arts, museums, shopping, nightlife
 - For transportation, use: "own car", "rental car", "Kingston Transit", "walking only", "mixed"
 - For pace, ONLY use: "relaxed", "moderate", or "packed"
+- For location_preference, extract area like "downtown", "waterfront", "near nature"
 - Return ONLY valid JSON, no explanation
 
 JSON response:"""
-    
+
     def _build_refinement_prompt(
-        self, 
-        existing_data: dict, 
+        self,
+        existing_data: dict,
         additional_input: str
     ) -> str:
         """Build refinement prompt with existing data"""
@@ -224,9 +252,9 @@ Keep existing values unless the new information contradicts or updates them.
 Return the complete updated JSON object.
 
 JSON response:"""
-    
+
     def _get_system_instruction(self) -> str:
-        """System instruction for Groq API"""
+        """System instruction for LLM API"""
         return """You are a travel planning assistant that extracts structured information from natural language.
 
 Your task is to:
@@ -240,33 +268,80 @@ Be conservative - only extract what the user clearly communicated."""
 
 ---
 
-### `itinerary_service.py` (Phase 2 - Planned)
+### `itinerary_service.py` (Implemented)
 
-**Purpose**: Generate feasible multi-day itineraries from validated preferences.
+**Purpose**: Generate feasible multi-day itineraries from validated preferences using Gemini LLM.
 
 **Key Functions**:
 ```python
 class ItineraryService:
     """Itinerary generation and feasibility validation"""
-    
+
+    def __init__(self, gemini_client: GeminiClient):
+        self.gemini_client = gemini_client
+        self.logger = logging.getLogger(__name__)
+
     async def generate_itinerary(
         self,
-        preferences: TripPreferences,
-        venues: List[Venue],
+        preferences: Dict,
         request_id: str
     ) -> Itinerary:
         """
-        Generate itinerary from preferences.
-        
+        Generate itinerary from validated preferences.
+
+        Uses Gemini with GEMINI_ITINERARY_TEMPERATURE and GEMINI_ITINERARY_MAX_TOKENS.
+
+        Args:
+            preferences: Validated TripPreferences as dict
+            request_id: UUID for request correlation
+
+        Returns:
+            Itinerary object with daily schedules
+
         Must enforce:
-        - Pace-specific parameters (from CLAUDE_EMBEDDED.md)
+        - Pace-specific parameters (from settings.PACE_PARAMS)
         - Budget constraints (total and daily)
         - Time constraints (hours_per_day, venue hours)
         - Transportation feasibility (travel times)
         - Weather warnings (outdoor activities)
         """
-        pass
-    
+        self.logger.info("Generating itinerary", extra={
+            "request_id": request_id,
+            "pace": preferences.get("pace"),
+            "duration_days": preferences.get("duration_days"),
+            "budget": preferences.get("budget")
+        })
+
+        prompt = self._build_itinerary_prompt(preferences)
+
+        response_text = await self.gemini_client.generate_content(
+            prompt=prompt,
+            system_instruction=GEMINI_ITINERARY_SYSTEM_INSTRUCTION,
+            temperature=settings.GEMINI_ITINERARY_TEMPERATURE,
+            max_tokens=settings.GEMINI_ITINERARY_MAX_TOKENS,
+            request_id=request_id
+        )
+
+        # Parse response into Itinerary model
+        itinerary_data = json.loads(response_text)
+        itinerary = self._build_itinerary(itinerary_data, preferences)
+
+        # Validate feasibility
+        validation = await self.validate_feasibility(itinerary, request_id)
+        if not validation["valid"]:
+            self.logger.warning("Itinerary feasibility issues", extra={
+                "request_id": request_id,
+                "issues": validation["issues"]
+            })
+
+        self.logger.info("Itinerary generated", extra={
+            "request_id": request_id,
+            "days": len(itinerary.days),
+            "total_activities": sum(len(d.activities) for d in itinerary.days)
+        })
+
+        return itinerary
+
     async def validate_feasibility(
         self,
         itinerary: Itinerary,
@@ -274,7 +349,7 @@ class ItineraryService:
     ) -> Dict[str, Any]:
         """
         Validate itinerary is feasible.
-        
+
         Checks:
         - Total time fits in available hours
         - Budget not exceeded
@@ -282,7 +357,50 @@ class ItineraryService:
         - Travel times realistic
         - Meals scheduled appropriately
         """
-        pass
+        return itinerary.validate()
+
+    def _build_itinerary_prompt(self, preferences: Dict) -> str:
+        """Build itinerary generation prompt from preferences"""
+        pace_params = settings.PACE_PARAMS.get(preferences.get("pace", "moderate"), {})
+
+        return f"""Generate a detailed {preferences.get('duration_days', 1)}-day itinerary for Kingston, Ontario.
+
+User Preferences:
+- Location: {preferences.get('location_preference', 'downtown')}
+- Dates: {preferences.get('start_date')} to {preferences.get('end_date')}
+- Budget: ${preferences.get('budget', 200)} {preferences.get('budget_currency', 'CAD')} total
+- Interests: {', '.join(preferences.get('interests', []))}
+- Pace: {preferences.get('pace', 'moderate')}
+- Hours per day: {preferences.get('hours_per_day', 8)}
+- Transportation: {', '.join(preferences.get('transportation_modes', ['mixed']))}
+
+Pace constraints:
+- Activities per day: {pace_params.get('activities_per_day', (4, 5))}
+- Minutes per activity: {pace_params.get('minutes_per_activity', (60, 90))}
+- Buffer between activities: {pace_params.get('buffer_minutes', 15)} min
+- Lunch duration: {pace_params.get('lunch_minutes', 75)} min
+- Dinner duration: {pace_params.get('dinner_minutes', 90)} min
+
+Return a JSON itinerary with days, activities, meals, and travel segments."""
+```
+
+**GEMINI_ITINERARY_SYSTEM_INSTRUCTION** (referenced by ItineraryService):
+```python
+GEMINI_ITINERARY_SYSTEM_INSTRUCTION = """You are an itinerary planning engine for Kingston, Ontario, Canada.
+
+Generate feasible, time-aware daily itineraries that:
+1. Respect pace parameters (activities/day, duration, buffers)
+2. Stay within budget constraints
+3. Include meals at appropriate times
+4. Account for travel time between venues
+5. Consider weather for outdoor activities
+6. Respect venue opening hours
+
+Return valid JSON with this structure for each day:
+- day_number, date
+- activities: [{venue_name, planned_start, planned_end, estimated_cost}]
+- meals: [{meal_type, venue_name, planned_start, planned_end, estimated_cost}]
+- travel_segments: [{from_venue, to_venue, mode, estimated_duration_minutes}]"""
 ```
 
 ---
@@ -293,7 +411,15 @@ class ItineraryService:
 1. **Conservative Extraction**: Only extract explicitly mentioned or strongly implied information
 2. **No Hallucination**: Use `null` for missing data, never guess
 3. **Valid JSON Only**: Response must parse as valid JSON
-4. **Schema Adherence**: All fields must match TripPreferences schema
+4. **Schema Adherence**: All fields must match TripPreferences schema (10 required + optional)
+5. **Gemini First**: Always try Gemini before falling back to Groq
+
+### Itinerary Generation Rules
+1. **Validate preferences** before generating (all 10 required fields present)
+2. **Respect pace parameters** from settings.PACE_PARAMS
+3. **Stay within budget** (total and daily)
+4. **Schedule meals** at appropriate times (lunch 11:30-13:30, dinner 17:30-20:00)
+5. **Account for travel time** between venues
 
 ### Validation Orchestration
 1. **ALWAYS** validate extracted preferences before returning
@@ -302,20 +428,21 @@ class ItineraryService:
 4. **NEVER** proceed with invalid preferences (< $50/day, missing required fields)
 
 ### Error Handling
-1. **Retry** Groq API failures up to 3 times with exponential backoff
-2. **LOG** full error traceback on failures
-3. **Redact** user input in logs (only log intent/summary, not full message)
-4. **Propagate** errors with clear messages
+1. **Try Gemini first**, fall back to Groq on failure
+2. **Retry** API failures up to 3 times with exponential backoff
+3. **LOG** full error traceback on failures
+4. **Redact** user input in logs (only log intent/summary, not full message)
+5. **Propagate** errors with clear messages
 
 ---
 
 ## Logging Requirements
 
 ### What to Log
-- **INFO**: Extraction start/success, validation results, completeness scores
+- **INFO**: Extraction start/success, validation results, completeness scores, which LLM was used
 - **DEBUG**: Prompts sent to API (redacted), API responses (redacted), parsing steps
-- **WARNING**: Validation warnings, retry attempts, degraded functionality
-- **ERROR**: API failures, invalid JSON, validation errors
+- **WARNING**: Validation warnings, retry attempts, fallback to Groq, degraded functionality
+- **ERROR**: API failures, invalid JSON, validation errors, both LLMs failed
 - **CRITICAL**: Repeated API failures, service unavailable
 
 ### Log Examples
@@ -324,29 +451,39 @@ class ItineraryService:
 logger.info("Starting NLP extraction", extra={
     "request_id": request_id,
     "input_length": len(user_input),
-    "service": "nlp_extraction"
+    "service": "nlp_extraction",
+    "primary_llm": "Gemini"
 })
 
 # Extraction success
 logger.info("NLP extraction successful", extra={
     "request_id": request_id,
+    "llm_used": "Gemini",
     "fields_extracted": 12,
     "completeness_score": 0.85
 })
 
-# Validation warning
-logger.warning("Budget is tight", extra={
+# Fallback to Groq
+logger.warning("Gemini extraction failed, falling back to Groq", extra={
     "request_id": request_id,
-    "daily_budget": 55.0,
-    "minimum": 50.0,
-    "impact": "Will prioritize affordable options"
+    "gemini_error": "Connection timeout",
+    "fallback": "Groq"
+})
+
+# Itinerary generation
+logger.info("Itinerary generated", extra={
+    "request_id": request_id,
+    "llm_used": "Gemini",
+    "days": 3,
+    "total_activities": 12,
+    "total_budget_used": 180.0
 })
 
 # API error with retry
-logger.error("Groq API failed, retrying", extra={
+logger.error("Both LLMs failed for extraction", extra={
     "request_id": request_id,
-    "retry_count": 1,
-    "error": "Connection timeout"
+    "gemini_error": "Connection timeout",
+    "groq_error": "Rate limited"
 }, exc_info=True)
 ```
 
@@ -359,19 +496,15 @@ logger.debug("User input summary", extra={
     "input_length": len(user_input)
     # DO NOT: "user_input": user_input
 })
-
-# Redact API keys in logs
-logger.debug("Calling Groq API", extra={
-    "api_key": redact_api_key(api_key),
-    "model": "llama-3.3-70b-versatile"
-})
 ```
 
 ---
 
 ## Testing Strategy
 
-### Unit Tests Required (Minimum 15)
+### Unit Tests Required (Minimum 20)
+
+**NLP Extraction Tests**:
 1. Test extraction with complete user input (all fields)
 2. Test extraction with minimal user input (only required fields)
 3. Test extraction with budget as total (calculate daily)
@@ -381,94 +514,123 @@ logger.debug("Calling Groq API", extra={
 7. Test extraction with transportation modes
 8. Test extraction with dietary restrictions
 9. Test extraction with accessibility needs
-10. Test refinement (add dietary restriction to existing preferences)
-11. Test refinement (update budget in existing preferences)
-12. Test refinement (preserve existing fields not mentioned)
-13. Test prompt building (extraction)
-14. Test prompt building (refinement)
-15. Test system instruction content
+10. Test extraction with location_preference
+11. Test refinement (add dietary restriction to existing preferences)
+12. Test refinement (update budget in existing preferences)
+13. Test refinement (preserve existing fields not mentioned)
+14. Test prompt building (extraction) with new schema fields
+15. Test prompt building (refinement)
+16. Test system instruction content
+17. Test Gemini to Groq fallback on failure
+
+**Itinerary Generation Tests**:
+18. Test itinerary generation with valid preferences
+19. Test itinerary feasibility validation (budget check)
+20. Test itinerary prompt includes pace parameters
 
 ### Integration Tests Required (Minimum 5)
-1. Test with real Groq API (using test API key)
-2. Test with invalid Groq API key (must fail gracefully)
-3. Test with network timeout (must retry)
+1. Test with real Gemini API (using test API key)
+2. Test with real Groq API fallback
+3. Test with network timeout (must retry/fallback)
 4. Test with invalid JSON response from API
-5. Test end-to-end extraction → validation pipeline
+5. Test end-to-end extraction -> validation -> itinerary pipeline
 
 ### Negative Tests Required (Minimum 5)
 1. Test with empty user input (must handle gracefully)
-2. Test with Groq API returning non-JSON
-3. Test with Groq API returning malformed JSON
-4. Test with network failure (no retries left)
-5. Test with invalid extracted data (e.g., budget as string)
+2. Test with Gemini API returning non-JSON
+3. Test with both Gemini and Groq failing
+4. Test with invalid extracted data (e.g., budget as string)
+5. Test itinerary generation with invalid preferences (must reject)
 
 ### Test Examples
 ```python
 @pytest.mark.asyncio
-async def test_extract_preferences_complete_input(mock_groq_client):
-    """Test extraction with all fields provided"""
-    service = NLPExtractionService(mock_groq_client)
-    
-    user_input = """I want to visit Kingston from March 15-17, 2026. 
-    My budget is $200. I'm interested in history and food. 
-    I have my own car and want a moderate pace. 
-    I'm vegetarian and need wheelchair access."""
-    
-    # Mock Groq response
-    mock_groq_client.chat_completion.return_value = MockResponse(
-        content=json.dumps({
-            "starting_location": null,
-            "city": "Kingston",
-            "start_date": "2026-03-15",
-            "end_date": "2026-03-17",
-            "budget": 200.0,
-            "interests": ["history", "food"],
-            "transportation_modes": ["own car"],
-            "pace": "moderate",
-            "dietary_restrictions": ["vegetarian"],
-            "accessibility_needs": ["wheelchair access"]
-        })
-    )
-    
+async def test_extract_preferences_gemini_primary(mock_gemini_client):
+    """Test extraction using Gemini (primary)"""
+    service = NLPExtractionService(mock_gemini_client)
+
+    user_input = """I want to visit downtown Kingston from March 15-17, 2026.
+    My budget is $200. I'm interested in history and food.
+    I have my own car and want a moderate pace."""
+
+    # Mock Gemini response
+    mock_gemini_client.generate_content.return_value = json.dumps({
+        "city": "Kingston",
+        "country": "Canada",
+        "location_preference": "downtown",
+        "start_date": "2026-03-15",
+        "end_date": "2026-03-17",
+        "budget": 200.0,
+        "interests": ["history", "food"],
+        "transportation_modes": ["own car"],
+        "pace": "moderate"
+    })
+
     preferences = await service.extract_preferences(user_input, "req-123")
-    
+
+    assert preferences.city == "Kingston"
+    assert preferences.location_preference == "downtown"
     assert preferences.start_date == "2026-03-15"
     assert preferences.budget == 200.0
     assert "history" in preferences.interests
     assert preferences.pace == "moderate"
-    assert "vegetarian" in preferences.dietary_restrictions
 
 @pytest.mark.asyncio
-async def test_refine_preferences_add_dietary(mock_groq_client):
-    """Test refining existing preferences with dietary restriction"""
-    service = NLPExtractionService(mock_groq_client)
-    
-    existing = TripPreferences(
-        start_date="2026-03-15",
-        end_date="2026-03-17",
-        budget=200.0,
-        interests=["history"],
-        pace="moderate"
-    )
-    
-    additional_input = "I'm vegetarian and want to see Fort Henry"
-    
-    # Mock Groq response with updated data
-    mock_groq_client.chat_completion.return_value = MockResponse(
-        content=json.dumps({
-            **existing.to_dict(),
-            "dietary_restrictions": ["vegetarian"],
-            "must_see_venues": ["Fort Henry"]
-        })
-    )
-    
-    updated = await service.refine_preferences(
-        existing, additional_input, "req-123"
-    )
-    
-    assert updated.start_date == existing.start_date  # Preserved
-    assert "vegetarian" in updated.dietary_restrictions  # Added
-    assert "Fort Henry" in updated.must_see_venues  # Added
+async def test_extract_preferences_groq_fallback(mock_gemini_client, mock_groq_client):
+    """Test fallback to Groq when Gemini fails"""
+    mock_gemini_client.generate_content.side_effect = ExternalAPIError("Gemini", "timeout")
+
+    service = NLPExtractionService(mock_gemini_client, mock_groq_client)
+
+    mock_groq_client.chat_completion.return_value = {
+        "choices": [{"message": {"content": json.dumps({
+            "city": "Kingston",
+            "location_preference": "downtown",
+            "start_date": "2026-03-15",
+            "end_date": "2026-03-17",
+            "budget": 200.0,
+            "interests": ["history"],
+            "pace": "moderate"
+        })}}]
+    }
+
+    preferences = await service.extract_preferences("Visit Kingston...", "req-123")
+
+    assert preferences.start_date == "2026-03-15"
+    mock_groq_client.chat_completion.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_generate_itinerary(mock_gemini_client):
+    """Test itinerary generation"""
+    service = ItineraryService(mock_gemini_client)
+
+    preferences = {
+        "city": "Kingston",
+        "location_preference": "downtown",
+        "start_date": "2026-03-15",
+        "end_date": "2026-03-17",
+        "duration_days": 3,
+        "budget": 200.0,
+        "interests": ["history", "food"],
+        "pace": "moderate",
+        "hours_per_day": 8,
+        "transportation_modes": ["mixed"]
+    }
+
+    mock_gemini_client.generate_content.return_value = json.dumps({
+        "days": [
+            {
+                "day_number": 1,
+                "date": "2026-03-15",
+                "activities": [{"venue_name": "Fort Henry", "planned_start": "09:00", "planned_end": "11:00", "estimated_cost": 25.0}],
+                "meals": [{"meal_type": "lunch", "venue_name": "Chez Piggy", "estimated_cost": 30.0}]
+            }
+        ]
+    })
+
+    itinerary = await service.generate_itinerary(preferences, "req-456")
+
+    assert len(itinerary.days) > 0
 ```
 
 ---
@@ -484,24 +646,19 @@ class ExternalAPIError(Exception):
         self.error = error
         self.retry_count = retry_count
 
-# Usage with retry logic
-async def extract_with_retry(user_input: str) -> TripPreferences:
-    max_retries = 3
-    backoff = 1  # seconds
-    
-    for attempt in range(max_retries):
+# Usage with Gemini -> Groq fallback
+async def extract_with_fallback(user_input: str, request_id: str) -> TripPreferences:
+    try:
+        # Try Gemini (primary)
+        return await extract_via_gemini(user_input, request_id)
+    except ExternalAPIError:
+        logger.warning("Gemini failed, falling back to Groq")
         try:
-            return await extract_preferences(user_input, request_id)
-        except ExternalAPIError as e:
-            if attempt < max_retries - 1:
-                logger.warning(f"Retry {attempt+1}/{max_retries}", extra={
-                    "service": e.service,
-                    "error": e.error
-                })
-                await asyncio.sleep(backoff * (2 ** attempt))
-            else:
-                logger.error("Max retries exceeded", exc_info=True)
-                raise
+            # Try Groq (fallback)
+            return await extract_via_groq(user_input, request_id)
+        except ExternalAPIError:
+            logger.error("Both Gemini and Groq failed")
+            raise
 ```
 
 ---
@@ -509,18 +666,56 @@ async def extract_with_retry(user_input: str) -> TripPreferences:
 ## Integration Points
 
 ### Used By
-- `controllers/trip_controller.py` - Calls NLP extraction for user input
-- `routes/trip_routes.py` - HTTP handlers for extraction endpoints
+- `controllers/trip_controller.py` - Calls NLP extraction and itinerary generation
+- `routes/trip_routes.py` - HTTP handlers for extraction and itinerary endpoints
 
 ### Uses
-- `clients/groq_client.py` - Groq API wrapper
+- `clients/gemini_client.py` - Primary LLM API wrapper
+- `clients/groq_client.py` - Fallback LLM API wrapper
 - `models/trip_preferences.py` - Data structures and validation
-- `config/settings.py` - API configuration
+- `models/itinerary.py` - Itinerary data structures
+- `config/settings.py` - API configuration, PACE_PARAMS, temperatures
+
+### Data Flow
+```
+User Input (HTTP)
+    |
+    v
+routes/trip_routes.py
+    |
+    v
+controllers/trip_controller.py
+    |
+    v
+services/nlp_extraction_service.py
+    |
+    v
+clients/gemini_client.py --> Gemini API (primary)
+    |                          |
+    | (on failure)             |
+    v                          v
+clients/groq_client.py --> Groq API (fallback)
+    |
+    v
+models/trip_preferences.py (validation)
+    |
+    v
+services/itinerary_service.py
+    |
+    v
+clients/gemini_client.py --> Gemini API (itinerary)
+    |
+    v
+models/itinerary.py (Itinerary object)
+    |
+    v
+HTTP Response (JSON)
+```
 
 ---
 
 ## Assumptions
-1. Groq API response is always valid JSON when `response_format={"type": "json_object"}` is set
+1. Gemini API is always tried first; Groq is optional fallback
 2. User input is in English
 3. All dates refer to current year or future
 4. Kingston, Ontario is the only city supported
@@ -530,8 +725,9 @@ async def extract_with_retry(user_input: str) -> TripPreferences:
 2. How to handle ambiguous date references ("next weekend")?
 3. Should we cache extraction results to avoid re-processing?
 4. What is the maximum user input length to accept?
+5. Should itinerary generation retry with different prompts on failure?
 
 ---
 
-**Last Updated**: 2026-02-07  
-**Status**: Phase 1 - Documentation Complete, Implementation Pending
+**Last Updated**: 2026-02-07
+**Status**: Phase 1 - NLPExtractionService (Gemini primary, Groq fallback) and ItineraryService implemented

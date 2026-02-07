@@ -16,8 +16,10 @@
 3. Validate results
 4. Format responses for routes
 
+### Current (Phase 1 - Added)
+5. **Itinerary Controller** (`itinerary_controller.py`) - Handle itinerary generation using Gemini (primary) / Groq (fallback)
+
 ### Planned (Phase 2/3)
-5. **Itinerary Controller** - Handle itinerary generation and management
 6. **Budget Controller** - Handle budget tracking operations
 7. **Venue Controller** - Handle venue search and filtering
 8. Request/response transformation
@@ -36,17 +38,30 @@
 import logging
 from typing import Dict, Any
 from backend.services.nlp_extraction_service import NLPExtractionService
-from backend.clients.groq_client import GroqClient
 from backend.models.trip_preferences import TripPreferences
 from backend.config.settings import settings
 
 class TripController:
-    """Controller for trip preference operations"""
-    
+    """
+    Controller for trip preference operations.
+
+    Uses Gemini (primary) / Groq (fallback) for NLP extraction.
+    All LLM config is centralized in settings.py (no separate gemini.py).
+
+    TripPreferences Required Fields (10):
+        city, country, start_date, end_date, duration_days,
+        budget, budget_currency, interests, pace, location_preference
+
+    TripPreferences Optional Fields:
+        starting_location (default: from location_preference),
+        hours_per_day (default: 8), transportation_modes (default: ["mixed"]),
+        group_size, group_type, children_ages, dietary_restrictions,
+        accessibility_needs, weather_tolerance, must_see_venues, must_avoid_venues
+    """
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.groq_client = GroqClient(api_key=settings.GROQ_API_KEY)
-        self.nlp_service = NLPExtractionService(self.groq_client)
+        self.nlp_service = NLPExtractionService(settings=settings)
     
     async def extract_preferences(
         self,
@@ -232,50 +247,72 @@ async def test_extract_preferences_success(mock_nlp_service):
     controller = TripController()
     controller.nlp_service = mock_nlp_service
     
-    # Mock NLP service response
+    # Mock NLP service response with all 10 required fields
     mock_prefs = TripPreferences(
+        city="Kingston",
+        country="Canada",
         start_date="2026-03-15",
         end_date="2026-03-17",
+        duration_days=3,
         budget=200.0,
-        interests=["history"]
+        budget_currency="CAD",
+        interests=["history"],
+        pace="moderate",
+        location_preference="downtown"
     )
     mock_nlp_service.extract_preferences.return_value = mock_prefs
-    
+
     result = await controller.extract_preferences(
         user_input="Visit Kingston...",
         request_id="req-123"
     )
-    
+
+    assert result["preferences"]["city"] == "Kingston"
     assert result["preferences"]["start_date"] == "2026-03-15"
-    assert result["validation"]["valid"] == False  # Missing required fields
+    assert result["preferences"]["duration_days"] == 3
+    assert result["validation"]["valid"] == True
     assert "completeness_score" in result["validation"]
 
 @pytest.mark.asyncio
 async def test_refine_preferences_adds_dietary(mock_nlp_service):
-    """Test refining with dietary restriction"""
+    """Test refining with dietary restriction (optional field)"""
     controller = TripController()
     controller.nlp_service = mock_nlp_service
-    
+
     existing = {
+        "city": "Kingston",
+        "country": "Canada",
         "start_date": "2026-03-15",
         "end_date": "2026-03-17",
-        "budget": 200.0
+        "duration_days": 3,
+        "budget": 200.0,
+        "budget_currency": "CAD",
+        "interests": ["history"],
+        "pace": "moderate",
+        "location_preference": "downtown"
     }
-    
+
     updated_prefs = TripPreferences(
+        city="Kingston",
+        country="Canada",
         start_date="2026-03-15",
         end_date="2026-03-17",
+        duration_days=3,
         budget=200.0,
+        budget_currency="CAD",
+        interests=["history"],
+        pace="moderate",
+        location_preference="downtown",
         dietary_restrictions=["vegetarian"]
     )
     mock_nlp_service.refine_preferences.return_value = updated_prefs
-    
+
     result = await controller.refine_preferences(
         existing_preferences=existing,
         additional_input="I'm vegetarian",
         request_id="req-124"
     )
-    
+
     assert "vegetarian" in result["preferences"]["dietary_restrictions"]
 ```
 
@@ -315,9 +352,10 @@ class ControllerError(Exception):
 - `routes/trip_routes.py` - HTTP request handlers
 
 ### Uses
-- `services/nlp_extraction_service.py` - Business logic
-- `models/trip_preferences.py` - Data structures
-- `clients/groq_client.py` - External APIs
+- `services/nlp_extraction_service.py` - NLP extraction business logic (Gemini primary / Groq fallback)
+- `services/itinerary_service.py` - Itinerary generation business logic (Gemini primary / Groq fallback)
+- `models/trip_preferences.py` - Data structures (10 required fields + optional fields)
+- `config/settings.py` - All LLM configuration (Gemini + Groq, no separate gemini.py)
 
 ---
 

@@ -39,10 +39,20 @@ repo = TripJsonRepository()
 repo.save(
     trip_id="trip_20260207_abc123",
     preferences={
+        # Required fields (10)
+        "city": "Kingston",
+        "country": "Canada",
         "start_date": "2026-03-15",
         "end_date": "2026-03-17",
+        "duration_days": 3,
         "budget": 200.0,
-        "interests": ["history", "food"]
+        "budget_currency": "CAD",
+        "interests": ["history", "food"],
+        "pace": "moderate",
+        "location_preference": "downtown",
+        # Optional fields
+        "hours_per_day": 8,
+        "transportation_modes": ["mixed"]
     }
 )
 
@@ -178,12 +188,27 @@ MonVoyage/
 {
   "trip_id": "trip_20260207_abc123",
   "preferences": {
+    "city": "Kingston",
+    "country": "Canada",
     "start_date": "2026-03-15",
     "end_date": "2026-03-17",
+    "duration_days": 3,
     "budget": 200.0,
+    "budget_currency": "CAD",
     "interests": ["history", "food"],
-    "transportation_modes": ["walking", "public_transit"],
-    "pace": "moderate"
+    "pace": "moderate",
+    "location_preference": "downtown",
+    "starting_location": "downtown",
+    "hours_per_day": 8,
+    "transportation_modes": ["mixed"],
+    "dietary_restrictions": ["vegetarian"],
+    "group_size": null,
+    "group_type": null,
+    "children_ages": [],
+    "accessibility_needs": [],
+    "weather_tolerance": null,
+    "must_see_venues": [],
+    "must_avoid_venues": []
   },
   "created_at": "2026-02-07T14:30:00",
   "updated_at": "2026-02-07T15:45:00"
@@ -215,7 +240,9 @@ MonVoyage/
 ### Planned Collections
 
 **trips**:
-- Fields: trip_id, preferences, user_id, created_at, updated_at
+- Fields: trip_id, preferences (10 required + optional fields), user_id, created_at, updated_at
+- Required preference fields: city, country, start_date, end_date, duration_days, budget, budget_currency, interests, pace, location_preference
+- Optional preference fields: starting_location, hours_per_day, transportation_modes, group_size, group_type, children_ages, dietary_restrictions, accessibility_needs, weather_tolerance, must_see_venues, must_avoid_venues
 - Indexes: trip_id (unique), user_id, created_at
 
 **itineraries**:
@@ -292,12 +319,19 @@ def temp_repo():
         yield TripJsonRepository(storage_dir=tmpdir)
 
 def test_save_and_load(temp_repo):
-    """Test round-trip save/load"""
-    preferences = {"budget": 200.0}
+    """Test round-trip save/load with required fields"""
+    preferences = {
+        "city": "Kingston", "country": "Canada",
+        "start_date": "2026-03-15", "end_date": "2026-03-17",
+        "duration_days": 3, "budget": 200.0, "budget_currency": "CAD",
+        "interests": ["history"], "pace": "moderate",
+        "location_preference": "downtown"
+    }
     temp_repo.save("trip_123", preferences)
-    
+
     loaded = temp_repo.load("trip_123")
     assert loaded["preferences"]["budget"] == 200.0
+    assert loaded["preferences"]["city"] == "Kingston"
 
 def test_load_nonexistent(temp_repo):
     """Test loading non-existent trip"""
@@ -434,27 +468,27 @@ from backend.storage.trip_json_repo import TripJsonRepository
 class TripController:
     def __init__(self):
         self.trip_repo = TripJsonRepository()
-    
+
     async def save_trip(self, trip_id: str, preferences: Dict):
-        # Validate preferences
+        # Validate preferences (checks 10 required fields)
         trip = TripPreferences.from_dict(preferences)
         validation = trip.validate()
-        
+
         if not validation["valid"]:
             raise ValidationError(validation["issues"])
-        
-        # Save to storage
+
+        # Save to storage (includes required + optional fields)
         self.trip_repo.save(trip_id, preferences)
-        
+
         return {"success": True, "trip_id": trip_id}
-    
+
     async def get_trip(self, trip_id: str):
         # Load from storage
         data = self.trip_repo.load(trip_id)
-        
+
         if data is None:
             raise TripNotFoundError(trip_id)
-        
+
         return data
 ```
 

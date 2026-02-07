@@ -2,10 +2,10 @@
 
 ## Overview
 
-The `clients/` module provides wrapper classes for external API integrations. These clients handle authentication, retries, error handling, and logging for third-party services.
+The `clients/` module provides wrapper classes for external API integrations. These clients handle authentication, retries, error handling, and logging for third-party services. Gemini is the primary LLM, with Groq available as a fallback.
 
-**Current Status**: Phase 1 - Groq client planned, implementation pending  
-**Dependencies**: `httpx`, `backend.config.settings`
+**Current Status**: Phase 1 - GeminiClient (primary) and GroqClient (fallback) implemented
+**Dependencies**: `google-genai`, `httpx`, `backend.config.settings`
 
 ---
 
@@ -16,14 +16,59 @@ The `clients/` module provides wrapper classes for external API integrations. Th
 - Implement retry logic with exponential backoff
 - Log API calls for debugging and monitoring
 - Abstract API details from business logic
+- Support LLM fallback (Gemini primary, Groq fallback)
 
 ---
 
 ## Files
 
-### `groq_client.py` (Phase 1 - Current)
+### `gemini_client.py` (Phase 1 - Primary LLM)
 
-Wrapper for Groq LLM API used in NLP extraction and itinerary generation.
+Wrapper for Google Gemini API using the `google-genai` SDK. This is the primary LLM client used for NLP extraction and itinerary generation.
+
+**Key Features**:
+- Uses `from google import genai` (google-genai SDK)
+- Simple `generate_content` interface returning plain text
+- Configurable temperature and max tokens per request
+- System instruction support
+- Request correlation logging
+
+**Example Usage**:
+```python
+from backend.clients.gemini_client import GeminiClient
+from backend.config.settings import settings
+
+# Initialize client
+client = GeminiClient(
+    api_key=settings.GEMINI_KEY,
+    model=settings.GEMINI_MODEL
+)
+
+# Generate content for NLP extraction
+result = await client.generate_content(
+    prompt="Extract trip preferences from: I want to visit Kingston March 15-17...",
+    system_instruction="You are a travel planning assistant that extracts structured information.",
+    temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
+    max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS,
+    request_id="req-123"
+)
+
+# result is a plain string containing the LLM response
+print(result)
+
+# Generate content for itinerary
+itinerary_result = await client.generate_content(
+    prompt="Generate a 3-day itinerary for Kingston...",
+    system_instruction="You are an itinerary planning engine.",
+    temperature=settings.GEMINI_ITINERARY_TEMPERATURE,
+    max_tokens=settings.GEMINI_ITINERARY_MAX_TOKENS,
+    request_id="req-456"
+)
+```
+
+### `groq_client.py` (Phase 1 - Fallback LLM)
+
+Wrapper for Groq LLM API used as fallback when Gemini is unavailable.
 
 **Key Features**:
 - Async HTTP client with configurable timeout
@@ -35,11 +80,16 @@ Wrapper for Groq LLM API used in NLP extraction and itinerary generation.
 **Example Usage**:
 ```python
 from backend.clients.groq_client import GroqClient
+from backend.config.settings import settings
 
-# Initialize client
-client = GroqClient(api_key=settings.GROQ_API_KEY, timeout=30, max_retries=3)
+# Initialize client (only when needed as fallback)
+client = GroqClient(
+    api_key=settings.GROQ_API_KEY,
+    timeout=30,
+    max_retries=3
+)
 
-# Chat completion
+# Chat completion (fallback)
 response = await client.chat_completion(
     messages=[
         {"role": "system", "content": "You are a helpful assistant"},
@@ -63,10 +113,6 @@ async with GroqClient() as client:
     response = await client.chat_completion(...)
 ```
 
-### `gemini_client.py` (Phase 1 - Alternative)
-
-Google Gemini API client (backup for Groq).
-
 ### `google_maps_client.py` (Phase 2 - Planned)
 
 Google Maps API for geocoding and routing.
@@ -89,6 +135,41 @@ Weather API for forecasts and activity recommendations.
 
 ---
 
+## LLM Client Strategy
+
+### Primary: Gemini
+- Used for all NLP extraction and itinerary generation
+- Configured via `GEMINI_KEY`, `GEMINI_MODEL` in settings
+- Uses `google-genai` SDK (`from google import genai`)
+- Separate temperature settings for extraction (0.2) and itinerary (0.7)
+
+### Fallback: Groq
+- Used only when Gemini is unavailable or fails
+- Configured via `GROQ_API_KEY`, `GROQ_MODEL` in settings
+- Uses `httpx` for direct API calls
+- JSON mode support via `response_format`
+
+### Fallback Flow
+```
+Request comes in
+    |
+    v
+Try Gemini (primary)
+    |
+    +-- Success --> Return result
+    |
+    +-- Failure --> Log warning
+                    |
+                    v
+                Try Groq (fallback)
+                    |
+                    +-- Success --> Return result
+                    |
+                    +-- Failure --> Raise ExternalAPIError
+```
+
+---
+
 ## Configuration
 
 ### API Keys
@@ -97,14 +178,16 @@ All clients use API keys from `backend/config/settings.py`:
 
 ```python
 # In .env file
-GROQ_API_KEY=gsk_your_key_here
-GOOGLE_MAPS_API_KEY=your_key_here
-WEATHER_API_KEY=your_key_here
+GEMINI_KEY=your_gemini_key_here
+GROQ_API_KEY=gsk_your_groq_key_here   # Optional fallback
+GOOGLE_MAPS_API_KEY=your_key_here      # Phase 2
+WEATHER_API_KEY=your_key_here          # Phase 2
 
 # In code
 from backend.config.settings import settings
 
-client = GroqClient(api_key=settings.GROQ_API_KEY)
+gemini_client = GeminiClient(api_key=settings.GEMINI_KEY)
+groq_client = GroqClient(api_key=settings.GROQ_API_KEY)  # Only if fallback needed
 ```
 
 ### Timeouts
@@ -112,8 +195,8 @@ client = GroqClient(api_key=settings.GROQ_API_KEY)
 Configure timeouts per client:
 
 ```python
-# Default: 30 seconds
-client = GroqClient(timeout=30)
+# Default: 30 seconds for LLM APIs
+groq_client = GroqClient(timeout=30)
 
 # Shorter for fast APIs
 maps_client = GoogleMapsClient(timeout=10)
@@ -124,7 +207,7 @@ maps_client = GoogleMapsClient(timeout=10)
 Configure max retry attempts:
 
 ```python
-# Default: 3 retries
+# Default: 3 retries (Groq only -- Gemini uses SDK defaults)
 client = GroqClient(max_retries=3)
 
 # More retries for critical operations
@@ -154,7 +237,7 @@ client = GroqClient(max_retries=5)
 
 ### Backoff Strategy
 
-**Exponential backoff**:
+**Exponential backoff** (Groq client):
 - Attempt 1: Immediate
 - Attempt 2: Wait 1 second
 - Attempt 3: Wait 2 seconds
@@ -167,11 +250,13 @@ sleep_time = 2 ** attempt  # 1, 2, 4, 8 seconds
 ### Example Retry Sequence
 
 ```
-Request 1: ❌ 500 Internal Server Error
-           Wait 1 second...
-Request 2: ❌ 503 Service Unavailable  
-           Wait 2 seconds...
-Request 3: ✅ 200 OK - Success!
+Gemini Request: Failure (timeout)
+    --> Fall back to Groq
+Groq Request 1: 500 Internal Server Error
+    --> Wait 1 second...
+Groq Request 2: 503 Service Unavailable
+    --> Wait 2 seconds...
+Groq Request 3: 200 OK - Success!
 ```
 
 ---
@@ -184,11 +269,17 @@ Request 3: ✅ 200 OK - Success!
 from backend.clients.groq_client import ExternalAPIError
 
 try:
-    response = await client.chat_completion(messages)
-except ExternalAPIError as e:
-    print(f"API: {e.service}")       # "Groq"
-    print(f"Error: {e.error}")       # "Connection timeout"
-    print(f"Retries: {e.retry_count}")  # 3
+    # Try Gemini first
+    result = await gemini_client.generate_content(prompt, request_id=req_id)
+except ExternalAPIError:
+    # Fall back to Groq
+    try:
+        response = await groq_client.chat_completion(messages, request_id=req_id)
+        result = response["choices"][0]["message"]["content"]
+    except ExternalAPIError as e:
+        print(f"API: {e.service}")       # "Groq"
+        print(f"Error: {e.error}")       # "Connection timeout"
+        print(f"Retries: {e.retry_count}")  # 3
 ```
 
 ### Error Response Format
@@ -199,9 +290,9 @@ When API fails:
   "success": false,
   "error": {
     "code": "EXTERNAL_API_ERROR",
-    "message": "Groq API unavailable",
-    "service": "Groq",
-    "retry_count": 3
+    "message": "All LLM providers unavailable",
+    "services_tried": ["Gemini", "Groq"],
+    "last_error": "Connection timeout"
   }
 }
 ```
@@ -212,7 +303,7 @@ When API fails:
 ```
 Error: 401 Unauthorized
 Cause: API key is invalid or expired
-Solution: Check .env file, verify key at https://console.groq.com/keys
+Solution: Check .env file, verify GEMINI_KEY or GROQ_API_KEY
 ```
 
 **Rate Limited**:
@@ -247,13 +338,12 @@ All API calls are logged with:
 {
   "timestamp": "2026-02-07T10:30:45Z",
   "level": "INFO",
-  "service": "groq_client",
+  "service": "gemini_client",
   "request_id": "req-123",
-  "message": "Groq API success",
+  "message": "Gemini API success",
   "data": {
-    "tokens_used": 245,
-    "response_time_ms": 1250,
-    "model": "llama-3.3-70b-versatile"
+    "response_length": 1200,
+    "model": "gemini-2.0-flash"
   }
 }
 ```
@@ -262,12 +352,12 @@ All API calls are logged with:
 
 API keys are **never** logged in full:
 ```python
-# ✅ Safe logging
+# Safe logging
 logger.info("API configured", extra={
     "api_key": "***...cdef"  # Only last 4 characters
 })
 
-# ❌ Dangerous - NEVER do this
+# Dangerous - NEVER do this
 logger.info(f"Using key: {api_key}")  # Full key exposed!
 ```
 
@@ -278,12 +368,13 @@ Track API response times:
 import time
 
 start = time.time()
-response = await client.chat_completion(...)
+result = await gemini_client.generate_content(prompt, request_id=req_id)
 duration_ms = (time.time() - start) * 1000
 
 logger.info("API call completed", extra={
     "response_time_ms": duration_ms,
-    "tokens_used": response["usage"]["total_tokens"]
+    "llm": "Gemini",
+    "model": "gemini-2.0-flash"
 })
 ```
 
@@ -297,6 +388,9 @@ logger.info("API call completed", extra={
 # All client tests
 pytest backend/tests/clients/ -v
 
+# Gemini client only
+pytest backend/tests/clients/test_gemini_client.py -v
+
 # Groq client only
 pytest backend/tests/clients/test_groq_client.py -v
 
@@ -306,45 +400,59 @@ pytest backend/tests/clients/ --cov=backend/clients --cov-report=html
 
 ### Test Types
 
-**Unit Tests** (with mocked HTTP):
+**Unit Tests** (with mocked APIs):
 ```python
 @pytest.mark.asyncio
-async def test_successful_api_call(mock_httpx):
-    mock_httpx.post.return_value = MockResponse(200, {"result": "success"})
-    
-    client = GroqClient(api_key="test")
-    response = await client.chat_completion(messages=[...])
-    
-    assert response["result"] == "success"
+async def test_gemini_successful_generation():
+    client = GeminiClient(api_key="test_key")
+
+    with mock.patch.object(client.client.models, 'generate_content') as mock_gen:
+        mock_gen.return_value = MockGeminiResponse(text="Generated itinerary")
+
+        result = await client.generate_content(
+            prompt="Generate itinerary",
+            temperature=0.7,
+            request_id="req-123"
+        )
+
+    assert result == "Generated itinerary"
 ```
 
 **Integration Tests** (with real API):
 ```python
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_real_groq_api():
-    """Test with actual Groq API (requires valid key)"""
-    client = GroqClient()
-    
-    response = await client.chat_completion(
-        messages=[{"role": "user", "content": "Say hello"}]
+async def test_real_gemini_api():
+    """Test with actual Gemini API (requires valid key)"""
+    client = GeminiClient()
+
+    result = await client.generate_content(
+        prompt="Say hello",
+        temperature=0.2,
+        max_tokens=100,
+        request_id="test-integration"
     )
-    
-    assert "choices" in response
-    assert len(response["choices"]) > 0
+
+    assert isinstance(result, str)
+    assert len(result) > 0
 ```
 
 **Negative Tests** (error scenarios):
 ```python
 @pytest.mark.asyncio
-async def test_invalid_api_key(mock_httpx):
+async def test_gemini_missing_key():
+    with pytest.raises(ValueError, match="Gemini API key required"):
+        GeminiClient(api_key="")
+
+@pytest.mark.asyncio
+async def test_groq_invalid_api_key(mock_httpx):
     mock_httpx.post.return_value = MockResponse(401)
-    
+
     client = GroqClient(api_key="invalid")
-    
+
     with pytest.raises(ExternalAPIError) as exc:
         await client.chat_completion(messages=[...])
-    
+
     assert exc.value.service == "Groq"
 ```
 
@@ -354,7 +462,11 @@ async def test_invalid_api_key(mock_httpx):
 
 ### Response Times
 
-**Groq API** (llama-3.3-70b-versatile):
+**Gemini API** (gemini-2.0-flash):
+- Simple extraction: 500-1000ms
+- Complex itinerary: 1000-2500ms
+
+**Groq API** (llama-3.3-70b-versatile) - fallback:
 - Simple extraction: 600-1200ms
 - Complex itinerary: 1500-3000ms
 
@@ -367,11 +479,12 @@ async def test_invalid_api_key(mock_httpx):
 
 ### Optimization Tips
 
-1. **Use async/await** for concurrent API calls
-2. **Cache responses** for identical requests
-3. **Batch requests** when API supports it
-4. **Set reasonable timeouts** (don't wait forever)
-5. **Monitor token usage** (Groq charges per token)
+1. **Use Gemini as primary** for faster responses
+2. **Use async/await** for concurrent API calls
+3. **Cache responses** for identical requests
+4. **Batch requests** when API supports it
+5. **Set reasonable timeouts** (don't wait forever)
+6. **Monitor token usage** (both Gemini and Groq charge per token)
 
 ---
 
@@ -384,15 +497,16 @@ async def test_invalid_api_key(mock_httpx):
 3. **Log all API calls** with request IDs
 4. **Redact sensitive data** (API keys, user PII)
 5. **Handle errors gracefully** (don't crash on API failures)
-6. **Support context managers** (`async with client:`)
+6. **Support fallback** where appropriate
 
 ### When Using Clients
 
-1. **Always close clients** or use context managers
-2. **Handle ExternalAPIError** in calling code
-3. **Pass request_id** for correlation logging
-4. **Set appropriate timeouts** for operation type
-5. **Monitor API usage** and costs
+1. **Try Gemini first**, then Groq as fallback
+2. **Always close clients** or use context managers
+3. **Handle ExternalAPIError** in calling code
+4. **Pass request_id** for correlation logging
+5. **Set appropriate timeouts** for operation type
+6. **Monitor API usage** and costs
 
 ---
 
@@ -408,11 +522,36 @@ async def test_invalid_api_key(mock_httpx):
 - [ ] Implement connection pooling
 - [ ] Add circuit breaker pattern
 - [ ] Add API usage metrics
-- [ ] Implement fallback APIs
+- [ ] Improve fallback logic with health checks
 
 ---
 
 ## API Reference
+
+### `GeminiClient`
+
+**Constructor**:
+```python
+GeminiClient(
+    api_key: Optional[str] = None,
+    model: Optional[str] = None
+)
+```
+
+**Methods**:
+
+**`async generate_content(prompt, system_instruction, temperature, max_tokens, request_id) -> str`**
+
+Generate content using Gemini API.
+
+- **Args**:
+  - `prompt`: The user prompt to send
+  - `system_instruction`: Optional system instruction
+  - `temperature`: Sampling temperature 0-1 (optional)
+  - `max_tokens`: Max response tokens (optional)
+  - `request_id`: UUID for logging
+- **Returns**: Generated text as string
+- **Raises**: `ExternalAPIError`
 
 ### `GroqClient`
 
@@ -429,7 +568,7 @@ GroqClient(
 
 **`async chat_completion(...) -> Dict[str, Any]`**
 
-Call Groq chat completion API.
+Call Groq chat completion API (fallback).
 
 - **Args**:
   - `messages`: List of chat messages
@@ -459,7 +598,7 @@ async with GroqClient() as client:
 When adding new clients:
 
 1. **Follow naming**: `<service>_client.py`
-2. **Inherit pattern**: Copy GroqClient structure
+2. **Inherit pattern**: Copy GeminiClient or GroqClient structure
 3. **Add retry logic**: Use exponential backoff
 4. **Add tests**: Unit + integration + negative
 5. **Document**: Update CLAUDE.md and README.md
@@ -467,6 +606,6 @@ When adding new clients:
 
 ---
 
-**Last Updated**: 2026-02-07  
-**Maintained By**: Backend Team  
+**Last Updated**: 2026-02-07
+**Maintained By**: Backend Team
 **Questions**: See `backend/clients/CLAUDE.md` for detailed agent instructions

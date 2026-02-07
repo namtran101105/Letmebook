@@ -4,7 +4,7 @@
 
 The `config/` module provides centralized configuration management for the MonVoyage backend. It loads environment variables, validates required settings, and exposes configuration values to all other modules.
 
-**Current Status**: Phase 1 - Structure defined, implementation pending  
+**Current Status**: Phase 1 - Gemini as primary LLM, Groq as fallback, all config in `settings.py`
 **Dependencies**: `python-dotenv`, `os`, `typing`
 
 ---
@@ -14,8 +14,9 @@ The `config/` module provides centralized configuration management for the MonVo
 - Load environment variables from `.env` file
 - Validate required configuration at application startup
 - Provide type-safe access to configuration values
-- Manage API credentials securely
+- Manage API credentials securely (Gemini, Groq, Google Maps, Weather)
 - Define application constants from MVP requirements
+- Define pace parameters, valid interests, and valid paces
 
 ---
 
@@ -23,7 +24,7 @@ The `config/` module provides centralized configuration management for the MonVo
 
 ### `settings.py`
 
-Central configuration singleton that all modules import.
+Central configuration singleton that all modules import. All LLM configuration (Gemini and Groq) lives here -- there is no separate `gemini.py` file.
 
 **Key Classes**:
 - `Settings` - Main configuration class with all settings as class attributes
@@ -33,10 +34,21 @@ Central configuration singleton that all modules import.
 ```python
 from backend.config.settings import settings
 
-# Access configuration
-api_key = settings.GROQ_API_KEY
-model = settings.GROQ_MODEL
+# Access Gemini configuration (PRIMARY LLM)
+gemini_key = settings.GEMINI_KEY
+gemini_model = settings.GEMINI_MODEL
+extraction_temp = settings.GEMINI_EXTRACTION_TEMPERATURE
+itinerary_temp = settings.GEMINI_ITINERARY_TEMPERATURE
+
+# Access Groq configuration (FALLBACK LLM)
+groq_key = settings.GROQ_API_KEY
+groq_model = settings.GROQ_MODEL
+
+# Access application constants
 min_budget = settings.MIN_DAILY_BUDGET
+pace_params = settings.PACE_PARAMS
+valid_paces = settings.VALID_PACES
+valid_interests = settings.VALID_INTERESTS
 
 # Validate at startup
 errors = settings.validate()
@@ -50,7 +62,15 @@ if errors:
 
 ### API Credentials
 
-**Groq API** (Required in Phase 1):
+**Gemini API** (Primary LLM - Required):
+- `GEMINI_KEY` - API key for Google Gemini (env var `GEMINI_KEY`)
+- `GEMINI_MODEL` - Model name (default: "gemini-2.0-flash")
+- `GEMINI_EXTRACTION_TEMPERATURE` - Temperature for NLP extraction (default: 0.2)
+- `GEMINI_ITINERARY_TEMPERATURE` - Temperature for itinerary generation (default: 0.7)
+- `GEMINI_EXTRACTION_MAX_TOKENS` - Max tokens for extraction (default: 2048)
+- `GEMINI_ITINERARY_MAX_TOKENS` - Max tokens for itinerary generation (default: 8192)
+
+**Groq API** (Fallback LLM - Optional):
 - `GROQ_API_KEY` - API key from https://console.groq.com/keys
 - `GROQ_MODEL` - Model name (default: "llama-3.3-70b-versatile")
 - `GROQ_TEMPERATURE` - Sampling temperature 0-1 (default: 0.2)
@@ -88,6 +108,9 @@ These values are derived from MVP requirements and should not be changed without
 - `MIN_DAILY_BUDGET = 50.0` - Minimum daily budget in CAD (non-negotiable)
 - `DEFAULT_PACE = "moderate"` - Default pace when user doesn't specify
 - `MAX_TRIP_DURATION_DAYS = 14` - Maximum trip duration for MVP
+- `PACE_PARAMS` - Dict mapping each pace to its scheduling parameters (activities/day, minutes/activity, buffers, meal times)
+- `VALID_PACES = ["relaxed", "moderate", "packed"]` - Allowed pace values
+- `VALID_INTERESTS = ["history", "food", "waterfront", "nature", "arts", "museums", "shopping", "nightlife"]` - Allowed interest categories
 
 ---
 
@@ -104,8 +127,12 @@ cp backend/.env.example backend/.env
 
 Edit `backend/.env`:
 ```bash
-# Groq API Configuration
-GROQ_API_KEY=gsk_your_actual_api_key_here
+# Gemini API Configuration (PRIMARY LLM)
+GEMINI_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.0-flash
+
+# Groq API Configuration (FALLBACK LLM - optional)
+GROQ_API_KEY=gsk_your_groq_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 
 # Flask/FastAPI Configuration
@@ -127,7 +154,7 @@ python backend/diagnose.py
 
 This will:
 - Load configuration from `.env`
-- Validate required fields
+- Validate required fields (GEMINI_KEY)
 - Check API key format
 - Report missing or invalid settings
 
@@ -138,7 +165,7 @@ This will:
 ### Never Commit Secrets
 
 The `.env` file is in `.gitignore`. **Never** commit:
-- API keys
+- API keys (Gemini, Groq, Google Maps, Weather)
 - Database passwords
 - Any sensitive credentials
 
@@ -146,7 +173,7 @@ The `.env` file is in `.gitignore`. **Never** commit:
 
 When logging, API keys are automatically redacted:
 ```python
-# Original: gsk_1234567890abcdef
+# Original: AIzaSyA1234567890abcdef
 # Logged as: ***...cdef
 ```
 
@@ -166,17 +193,19 @@ For different environments, use separate `.env` files:
 Configuration is validated at startup. Application will **fail to start** if:
 
 1. **Missing Required Fields**:
-   - `GROQ_API_KEY` is empty or not set
+   - `GEMINI_KEY` is empty or not set
 
 2. **Invalid Values**:
-   - `GROQ_TEMPERATURE` is not between 0 and 1
+   - `GEMINI_EXTRACTION_TEMPERATURE` is not between 0 and 1
+   - `GEMINI_ITINERARY_TEMPERATURE` is not between 0 and 1
+   - `GROQ_TEMPERATURE` is not between 0 and 1 (only if GROQ_API_KEY is set)
    - `PORT` is not between 1 and 65535
    - `LOG_LEVEL` is not a valid logging level
 
 3. **Type Mismatches**:
    - `PORT` is not a valid integer
    - `DEBUG` is not a boolean value
-   - `GROQ_TEMPERATURE` is not a valid float
+   - Temperature values are not valid floats
 
 ---
 
@@ -200,38 +229,40 @@ ENVIRONMENT=production pytest backend/tests/config/test_settings.py
 
 ### Example Test Cases
 
-1. ✅ Load configuration from `.env` file
-2. ✅ Use default values when env var not set
-3. ✅ Convert string "true" to boolean True
-4. ✅ Validate required GROQ_API_KEY
-5. ✅ Reject GROQ_TEMPERATURE outside 0-1 range
-6. ✅ Redact API keys in logs
-7. ✅ Detect production environment
-8. ❌ Fail startup with missing API key
-9. ❌ Reject invalid PORT value
-10. ❌ Reject malformed boolean value
+1. Load configuration from `.env` file
+2. Use default values when env var not set
+3. Convert string "true" to boolean True
+4. Validate required GEMINI_KEY
+5. Reject GEMINI_EXTRACTION_TEMPERATURE outside 0-1 range
+6. Reject GEMINI_ITINERARY_TEMPERATURE outside 0-1 range
+7. Redact API keys in logs
+8. Detect production environment
+9. Fail startup with missing Gemini API key
+10. Reject invalid PORT value
+11. Validate PACE_PARAMS contains all valid paces
+12. Validate VALID_INTERESTS list is complete
 
 ---
 
 ## Common Issues
 
-### Issue: "GROQ_API_KEY is required"
+### Issue: "GEMINI_KEY is required"
 
-**Cause**: `.env` file missing or GROQ_API_KEY not set
+**Cause**: `.env` file missing or GEMINI_KEY not set
 
 **Solution**:
 1. Create `backend/.env` from `backend/.env.example`
-2. Add your Groq API key from https://console.groq.com/keys
+2. Add your Gemini API key
 3. Ensure no extra spaces around the value
 
-### Issue: "GROQ_TEMPERATURE must be 0-1"
+### Issue: "GEMINI_EXTRACTION_TEMPERATURE must be 0-1"
 
 **Cause**: Invalid temperature value in `.env`
 
 **Solution**:
-Set `GROQ_TEMPERATURE` to a value between 0 and 1:
+Set `GEMINI_EXTRACTION_TEMPERATURE` to a value between 0 and 1:
 ```bash
-GROQ_TEMPERATURE=0.2
+GEMINI_EXTRACTION_TEMPERATURE=0.2
 ```
 
 ### Issue: "Cannot load .env file"
@@ -253,7 +284,17 @@ GROQ_TEMPERATURE=0.2
 All backend modules import configuration:
 
 ```python
-# In services/nlp_extraction_service.py
+# In clients/gemini_client.py (PRIMARY LLM)
+from backend.config.settings import settings
+
+gemini_client = GeminiClient(
+    api_key=settings.GEMINI_KEY,
+    model=settings.GEMINI_MODEL
+)
+```
+
+```python
+# In clients/groq_client.py (FALLBACK LLM)
 from backend.config.settings import settings
 
 groq_client = GroqClient(
@@ -286,7 +327,10 @@ if errors:
 
 logger.info("Configuration loaded", extra={
     "environment": settings.ENVIRONMENT,
-    "debug_mode": settings.DEBUG
+    "debug_mode": settings.DEBUG,
+    "primary_llm": "Gemini",
+    "gemini_model": settings.GEMINI_MODEL,
+    "groq_fallback": bool(settings.GROQ_API_KEY)
 })
 ```
 
@@ -318,12 +362,21 @@ logger.info("Configuration loaded", extra={
 - `PORT: int` - Server port number
 - `DEBUG: bool` - Debug mode flag
 - `ENVIRONMENT: str` - Environment name
-- `GROQ_API_KEY: str` - Groq API key (required)
+- `GEMINI_KEY: str` - Gemini API key (required)
+- `GEMINI_MODEL: str` - Gemini model name
+- `GEMINI_EXTRACTION_TEMPERATURE: float` - Extraction temperature (0-1)
+- `GEMINI_ITINERARY_TEMPERATURE: float` - Itinerary generation temperature (0-1)
+- `GEMINI_EXTRACTION_MAX_TOKENS: int` - Max extraction response tokens
+- `GEMINI_ITINERARY_MAX_TOKENS: int` - Max itinerary response tokens
+- `GROQ_API_KEY: str` - Groq API key (optional fallback)
 - `GROQ_MODEL: str` - Groq model name
-- `GROQ_TEMPERATURE: float` - Sampling temperature (0-1)
-- `GROQ_MAX_TOKENS: int` - Max response tokens
+- `GROQ_TEMPERATURE: float` - Groq sampling temperature (0-1)
+- `GROQ_MAX_TOKENS: int` - Groq max response tokens
 - `MIN_DAILY_BUDGET: float` - Minimum daily budget (CAD)
 - `DEFAULT_PACE: str` - Default trip pace
+- `PACE_PARAMS: Dict` - Pace scheduling parameters
+- `VALID_PACES: List[str]` - Allowed pace values
+- `VALID_INTERESTS: List[str]` - Allowed interest categories
 - `LOG_LEVEL: str` - Logging level
 
 **Methods**:
@@ -362,6 +415,6 @@ When adding new configuration:
 
 ---
 
-**Last Updated**: 2026-02-07  
-**Maintained By**: Backend Team  
+**Last Updated**: 2026-02-07
+**Maintained By**: Backend Team
 **Questions**: See `backend/config/CLAUDE.md` for detailed agent instructions
