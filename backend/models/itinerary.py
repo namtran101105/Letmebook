@@ -45,6 +45,7 @@ class Activity:
     category: Optional[str] = None      # maps to user interests
     notes: Optional[str] = None
     duration_reason: Optional[str] = None
+    source_url: Optional[str] = None    # Official venue website URL from database
 
     # Status
     status: str = "pending"             # pending|in_progress|completed|skipped|cancelled
@@ -55,6 +56,9 @@ class Activity:
 
     # Transportation to next activity
     travel_to_next: Optional[TravelSegment] = None
+
+    # Whether this activity came from the Airflow venue database
+    from_database: bool = False
 
 
 @dataclass

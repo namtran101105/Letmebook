@@ -27,6 +27,7 @@ You need Docker Desktop installed and running, `docker compose` available, and y
     --lastname User \
     --role Admin \
     --email admin@example.com
+  '
   ```
 - Run seeds:
   ```bash
@@ -35,7 +36,7 @@ You need Docker Desktop installed and running, `docker compose` available, and y
   ```
 
 ## Launch the Airflow UI
-- The UI is live at https://localhost:8080
+- The UI is live at http://localhost:8080/home
 
 ## Verifying Data Changes
 1. Display database table:

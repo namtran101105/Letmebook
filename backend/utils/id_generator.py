@@ -1,6 +1,4 @@
-"""
-Utility for generating unique trip IDs.
-"""
+"""ID generation utilities."""
 import uuid
 from datetime import datetime
 
@@ -8,23 +6,23 @@ from datetime import datetime
 def generate_trip_id() -> str:
     """
     Generate a unique trip ID.
-
+    
+    Format: trip_{timestamp}_{uuid_short}
+    Example: trip_20260208_a3f2d1c4
+    
     Returns:
-        Unique trip ID string (e.g., "trip_20240207_a3f2b1c4")
+        str: A unique trip identifier
     """
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    unique_suffix = uuid.uuid4().hex[:8]
-    return f"trip_{timestamp}_{unique_suffix}"
+    timestamp = datetime.utcnow().strftime("%Y%m%d")
+    uuid_short = str(uuid.uuid4())[:8]
+    return f"trip_{timestamp}_{uuid_short}"
 
 
-def generate_itinerary_id(trip_id: str) -> str:
+def generate_session_id() -> str:
     """
-    Generate an itinerary ID based on trip ID.
-
-    Args:
-        trip_id: The associated trip ID
-
+    Generate a unique session ID.
+    
     Returns:
-        Itinerary ID string
+        str: A unique session identifier
     """
-    return f"itinerary_{trip_id}"
+    return str(uuid.uuid4())

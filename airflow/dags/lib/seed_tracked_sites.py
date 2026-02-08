@@ -9,32 +9,32 @@ from lib.db import get_engine, init_db
 PLACES = [
     {"place_key": "visit_1000_islands", "canonical_name": "Visit 1000 Islands", "city": "Kingston/Brockville", "category": "tourism"},
 
-    {"place_key": "cn_tower", "canonical_name": "CN Tower", "city": "Toronto", "category": "culture_history"},
-    {"place_key": "toronto_islands_ferry", "canonical_name": "Toronto Islands Ferry", "city": "Toronto", "category": "natural_place"},
-    {"place_key": "yorkdale_shopping_centre", "canonical_name": "Yorkdale Shopping Centre", "city": "Toronto", "category": "entertainment"},
+    {"place_key": "cn_tower", "canonical_name": "CN Tower", "city": "Toronto", "category": "tourism"},
+    {"place_key": "toronto_islands_ferry", "canonical_name": "Toronto Islands Ferry", "city": "Toronto", "category": "island"},
+    {"place_key": "yorkdale_shopping_centre", "canonical_name": "Yorkdale Shopping Centre", "city": "Toronto", "category": "shopping"},
     {"place_key": "rogers_centre", "canonical_name": "Rogers Centre", "city": "Toronto", "category": "sport"},
-    {"place_key": "happy_lamb_hot_pot", "canonical_name": "Happy Lamb Hot Pot", "city": "Toronto", "category": "food_beverage"},
-    {"place_key": "royal_ontario_museum", "canonical_name": "Royal Ontario Museum", "city": "Toronto", "category": "culture_history"},
-    {"place_key": "art_gallery_ontario", "canonical_name": "Art Gallery of Ontario", "city": "Toronto", "category": "culture_history"},
-    {"place_key": "earl_bales_ski_centre", "canonical_name": "Earl Bales Ski and Snowboard Centre", "city": "Toronto", "category": "natural_place"},
-    {"place_key": "cong_ca_phe_toronto", "canonical_name": "Cong Ca Phe Toronto", "city": "Toronto", "category": "food_beverage"},
-    {"place_key": "toronto_eaton_centre", "canonical_name": "CF Toronto Eaton Centre", "city": "Toronto", "category": "entertainment"},
-    {"place_key": "st_lawrence_market", "canonical_name": "St. Lawrence Market", "city": "Toronto", "category": "food_beverage"},
+    {"place_key": "happy_lamb_hot_pot", "canonical_name": "Happy Lamb Hot Pot", "city": "Toronto", "category": "restaurant"},
+    {"place_key": "royal_ontario_museum", "canonical_name": "Royal Ontario Museum", "city": "Toronto", "category": "museum"},
+    {"place_key": "art_gallery_ontario", "canonical_name": "Art Gallery of Ontario", "city": "Toronto", "category": "gallery"},
+    {"place_key": "earl_bales_ski_centre", "canonical_name": "Earl Bales Ski and Snowboard Centre", "city": "Toronto", "category": "recreation"},
+    {"place_key": "cong_ca_phe_toronto", "canonical_name": "Cong Ca Phe Toronto", "city": "Toronto", "category": "cafe"},
+    {"place_key": "toronto_eaton_centre", "canonical_name": "CF Toronto Eaton Centre", "city": "Toronto", "category": "shopping"},
+    {"place_key": "st_lawrence_market", "canonical_name": "St. Lawrence Market", "city": "Toronto", "category": "food"},
     {"place_key": "ripleys_aquarium_canada", "canonical_name": "Ripley's Aquarium of Canada", "city": "Toronto", "category": "entertainment"},
-    {"place_key": "casa_loma", "canonical_name": "Casa Loma", "city": "Toronto", "category": "culture_history"},
-    {"place_key": "toronto_zoo", "canonical_name": "Toronto Zoo", "city": "Toronto", "category": "natural_place"},
-    {"place_key": "ontario_science_centre", "canonical_name": "Ontario Science Centre", "city": "Toronto", "category": "culture_history"},
-    {"place_key": "distillery_district", "canonical_name": "Distillery Historic District", "city": "Toronto", "category": "culture_history"},
-    {"place_key": "high_park", "canonical_name": "High Park", "city": "Toronto", "category": "natural_place"},
+    {"place_key": "casa_loma", "canonical_name": "Casa Loma", "city": "Toronto", "category": "historic"},
+    {"place_key": "toronto_zoo", "canonical_name": "Toronto Zoo", "city": "Toronto", "category": "park"},
+    {"place_key": "ontario_science_centre", "canonical_name": "Ontario Science Centre", "city": "Toronto", "category": "museum"},
+    {"place_key": "distillery_district", "canonical_name": "Distillery Historic District", "city": "Toronto", "category": "historic"},
+    {"place_key": "high_park", "canonical_name": "High Park", "city": "Toronto", "category": "park"},
     {"place_key": "nathan_phillips_square", "canonical_name": "Nathan Phillips Square", "city": "Toronto", "category": "entertainment"},
     {"place_key": "scotiabank_arena", "canonical_name": "Scotiabank Arena", "city": "Toronto", "category": "sport"},
     {"place_key": "toronto_symphony_orchestra", "canonical_name": "Toronto Symphony Orchestra", "city": "Toronto", "category": "entertainment"},
-    {"place_key": "kensington_market", "canonical_name": "Kensington Market", "city": "Toronto", "category": "food_beverage"},
+    {"place_key": "kensington_market", "canonical_name": "Kensington Market", "city": "Toronto", "category": "food"},
     {"place_key": "rec_room_toronto", "canonical_name": "The Rec Room Toronto Roundhouse", "city": "Toronto", "category": "entertainment"},
-    {"place_key": "steam_whistle_brewery", "canonical_name": "Steam Whistle Brewery", "city": "Toronto", "category": "food_beverage"},
-    {"place_key": "aga_khan_museum", "canonical_name": "Aga Khan Museum", "city": "Toronto", "category": "culture_history"},
+    {"place_key": "steam_whistle_brewery", "canonical_name": "Steam Whistle Brewery", "city": "Toronto", "category": "brewery"},
+    {"place_key": "aga_khan_museum", "canonical_name": "Aga Khan Museum", "city": "Toronto", "category": "museum"},
     {"place_key": "harbourfront_centre", "canonical_name": "Harbourfront Centre", "city": "Toronto", "category": "entertainment"},
-    {"place_key": "allan_gardens_conservatory", "canonical_name": "Allan Gardens Conservatory", "city": "Toronto", "category": "natural_place"},
+    {"place_key": "allan_gardens_conservatory", "canonical_name": "Allan Gardens Conservatory", "city": "Toronto", "category": "garden"},
 ]
 
 
@@ -109,7 +109,6 @@ PAGES = [
 ]
 
 
-
 def stable_hash(obj) -> str:
     payload = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -127,18 +126,19 @@ def main() -> None:
     upsert_place_stmt = text(
         """
         INSERT INTO places (
-          place_key, canonical_name, city, category,
+          place_key, canonical_name, name, city, category,
           profile_json,
           content_json, content_hash
         )
         VALUES (
-          :place_key, :canonical_name, :city, :category,
+          :place_key, :canonical_name, :canonical_name, :city, :category,
           COALESCE(CAST(:profile_json AS jsonb), '{}'::jsonb),
           COALESCE(CAST(:content_json AS jsonb), '{}'::jsonb),
           COALESCE(:content_hash, :fallback_hash)
         )
         ON CONFLICT (place_key) DO UPDATE SET
           canonical_name = EXCLUDED.canonical_name,
+          name = EXCLUDED.name,
           city = EXCLUDED.city,
           category = EXCLUDED.category,
           profile_json = EXCLUDED.profile_json,

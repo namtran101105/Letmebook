@@ -34,8 +34,10 @@ Thumbs.db
 # Project-specific (optional)
 data/trips/*.json
 data/itineraries/*.json
+*.json
 
 # Airflow
 airflow/logs/
 airflow/*.db
 airflow/*.pid
+doc/todo.md

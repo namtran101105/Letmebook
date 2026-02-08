@@ -163,6 +163,63 @@ class GeminiClient:
             retry_count=self.max_retries,
         )
 
+    def chat_with_history(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> str:
+        """
+        Send a full conversation history to Gemini and return the assistant reply.
+
+        Args:
+            messages: Ordered list of {"role": ..., "content": ...} dicts
+                      (system / user / assistant).
+            temperature: Controls randomness (0.0-2.0).
+            max_tokens: Maximum tokens in the response.
+
+        Returns:
+            The assistant's reply as a plain string.
+        """
+        from config.settings import settings
+
+        generation_config = types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        )
+
+        # Extract system instruction if present
+        system_instruction = None
+        chat_messages = messages
+        if messages and messages[0].get("role") == "system":
+            system_instruction = messages[0]["content"]
+            chat_messages = messages[1:]
+            generation_config.system_instruction = system_instruction
+
+        # Convert messages to Gemini format
+        contents = []
+        for msg in chat_messages:
+            role = msg["role"]
+            content = msg["content"]
+            
+            # Map OpenAI-style roles to Gemini roles
+            if role == "assistant":
+                role = "model"
+            elif role == "system":
+                continue  # Already handled above
+            
+            contents.append(types.Content(role=role, parts=[types.Part(text=content)]))
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=generation_config,
+            )
+            return response.text
+        except Exception as e:
+            raise Exception(f"Gemini API chat request failed: {str(e)}")
+
     # Context-manager support
     async def __aenter__(self):
         return self

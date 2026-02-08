@@ -3,13 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kingston Trip Planner - Chatbot</title>
+    <title>Toronto Trip Planner</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -33,6 +29,7 @@
             overflow: hidden;
         }
 
+        /* ── Chat panel ─────────────────────── */
         .chat-panel {
             display: flex;
             flex-direction: column;
@@ -47,16 +44,8 @@
             padding: 20px;
             text-align: center;
         }
-
-        .header h1 {
-            font-size: 24px;
-            margin-bottom: 5px;
-        }
-
-        .header p {
-            font-size: 14px;
-            opacity: 0.9;
-        }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header p { font-size: 14px; opacity: 0.9; }
 
         .messages {
             flex: 1;
@@ -66,79 +55,28 @@
             background: #f8f9fa;
             scroll-behavior: smooth;
         }
+        .messages::-webkit-scrollbar { width: 8px; }
+        .messages::-webkit-scrollbar-track { background: #e0e0e0; border-radius: 10px; }
+        .messages::-webkit-scrollbar-thumb { background: #999; border-radius: 10px; }
 
-        /* Custom scrollbar for messages */
-        .messages::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .messages::-webkit-scrollbar-track {
-            background: #e0e0e0;
-            border-radius: 10px;
-        }
-
-        .messages::-webkit-scrollbar-thumb {
-            background: #999;
-            border-radius: 10px;
-        }
-
-        .messages::-webkit-scrollbar-thumb:hover {
-            background: #666;
-        }
-
-        .message {
-            margin-bottom: 15px;
-            display: flex;
-            gap: 10px;
-        }
-
-        .message.user {
-            justify-content: flex-end;
-            display: flex !important;
-        }
+        .message { margin-bottom: 15px; display: flex; gap: 10px; }
+        .message.user { justify-content: flex-end; }
 
         .message-bubble {
-            max-width: 70%;
+            max-width: 75%;
             padding: 12px 16px;
             border-radius: 18px;
-            line-height: 1.4;
+            line-height: 1.5;
             word-wrap: break-word;
+            white-space: pre-wrap;
         }
+        .message.bot .message-bubble { background: #e3e3e3; color: #333; }
+        .message.user .message-bubble { background: #667eea; color: white; }
+        .message.system .message-bubble { background: #fff3cd; color: #856404; max-width: 100%; text-align: center; }
+        .message.error .message-bubble { background: #f8d7da; color: #721c24; max-width: 100%; }
 
-        .message.bot .message-bubble {
-            background: #e3e3e3;
-            color: #333;
-        }
-
-        .message.user .message-bubble {
-            background: #667eea;
-            color: white;
-            display: block !important;
-        }
-
-        .message.system .message-bubble {
-            background: #fff3cd;
-            color: #856404;
-            max-width: 100%;
-            text-align: center;
-        }
-
-        .message.error .message-bubble {
-            background: #f8d7da;
-            color: #721c24;
-            max-width: 100%;
-        }
-
-        .input-area {
-            padding: 20px;
-            background: white;
-            border-top: 1px solid #e0e0e0;
-        }
-
-        .input-container {
-            display: flex;
-            gap: 10px;
-        }
+        .input-area { padding: 20px; background: white; border-top: 1px solid #e0e0e0; }
+        .input-container { display: flex; gap: 10px; }
 
         #userInput {
             flex: 1;
@@ -149,10 +87,7 @@
             outline: none;
             transition: border-color 0.3s;
         }
-
-        #userInput:focus {
-            border-color: #667eea;
-        }
+        #userInput:focus { border-color: #667eea; }
 
         #sendBtn {
             padding: 12px 30px;
@@ -164,16 +99,10 @@
             cursor: pointer;
             transition: transform 0.2s;
         }
+        #sendBtn:hover:not(:disabled) { transform: scale(1.05); }
+        #sendBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-        #sendBtn:hover:not(:disabled) {
-            transform: scale(1.05);
-        }
-
-        #sendBtn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
+        /* ── Right panel ────────────────────── */
         .results-panel {
             display: flex;
             flex-direction: column;
@@ -181,136 +110,73 @@
             height: 100%;
             overflow: hidden;
         }
-
         .results-header {
             background: #2c3e50;
             color: white;
             padding: 20px;
             text-align: center;
         }
-
         .results-content {
             flex: 1;
             padding: 20px;
-            overflow-y: scroll; /* Always show scrollbar */
-            overflow-x: hidden;
+            overflow-y: auto;
             max-height: 100%;
         }
+        .results-content::-webkit-scrollbar { width: 8px; }
+        .results-content::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        .results-content::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
 
-        /* Custom scrollbar styling */
-        .results-content::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .results-content::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-
-        .results-content::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 10px;
-        }
-
-        .results-content::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-
-        .preference-card {
+        .info-card {
             background: white;
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 20px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
-
-        .preference-card h3 {
+        .info-card h3 {
             color: #667eea;
             margin-bottom: 15px;
             font-size: 18px;
             border-bottom: 2px solid #667eea;
             padding-bottom: 10px;
         }
-
-        .preference-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
+        .info-card ul { list-style: none; padding: 0; }
+        .info-card li {
+            padding: 6px 0;
             border-bottom: 1px solid #f0f0f0;
-        }
-
-        .preference-item:last-child {
-            border-bottom: none;
-        }
-
-        .label {
-            font-weight: 600;
             color: #555;
         }
-
-        .value {
-            color: #333;
-        }
-
-        .validation-badge {
+        .info-card li:last-child { border-bottom: none; }
+        .badge {
             display: inline-block;
-            padding: 4px 12px;
+            padding: 3px 10px;
             border-radius: 12px;
             font-size: 12px;
             font-weight: 600;
         }
+        .badge.missing { background: #fff3cd; color: #856404; }
+        .badge.done { background: #d4edda; color: #155724; }
 
-        .validation-badge.valid {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .validation-badge.warning {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .json-view {
-            background: #2c3e50;
-            color: #00ff00;
-            padding: 15px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            overflow-x: auto;
-            overflow-y: auto;
-            max-height: 300px;
-            margin-top: 15px;
+        .itinerary-view {
             white-space: pre-wrap;
-            word-wrap: break-word;
+            font-size: 14px;
+            line-height: 1.7;
+            color: #333;
         }
+        .itinerary-view strong { color: #667eea; }
+
+        .empty-state { text-align: center; color: #999; padding: 40px; }
+        .empty-state svg { width: 80px; height: 80px; margin-bottom: 20px; opacity: 0.3; }
 
         .loading {
             display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,0.3);
+            width: 20px; height: 20px;
+            border: 3px solid rgba(0,0,0,0.15);
             border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
+            border-top-color: #667eea;
+            animation: spin 0.8s ease-in-out infinite;
         }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #999;
-            padding: 40px;
-        }
-
-        .empty-state svg {
-            width: 80px;
-            height: 80px;
-            margin-bottom: 20px;
-            opacity: 0.3;
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -318,43 +184,35 @@
         <!-- Chat Panel -->
         <div class="chat-panel">
             <div class="header">
-                <h1>🏰 Kingston Trip Planner</h1>
-                <p>Tell me about your trip and I'll extract your preferences</p>
+                <h1>Toronto Trip Planner</h1>
+                <p>Plan your perfect Toronto itinerary with AI</p>
             </div>
 
-            <div class="messages" id="messages">
-                <div class="message system">
-                    <div class="message-bubble">
-                        👋 Hi there!
-                    </div>
-                </div>
-            </div>
+            <div class="messages" id="messages"></div>
 
             <div class="input-area">
                 <div class="input-container">
-                    <input
-                        type="text"
-                        id="userInput"
-                        placeholder="E.g., I want to visit Kingston next weekend with my family..."
-                        autocomplete="off"
-                    >
+                    <input type="text" id="userInput"
+                           placeholder="Tell me about your Toronto trip plans..."
+                           autocomplete="off">
                     <button id="sendBtn">Send</button>
                 </div>
             </div>
         </div>
 
-        <!-- Results Panel -->
+        <!-- Right Panel -->
         <div class="results-panel">
             <div class="results-header">
-                <h2>📊 Extracted Preferences</h2>
+                <h2 id="rightPanelTitle">Trip Status</h2>
             </div>
-
             <div class="results-content" id="results">
                 <div class="empty-state">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1
+                              1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                     </svg>
-                    <p>No preferences extracted yet.<br>Start chatting to see results here!</p>
+                    <p>Start chatting to plan your trip!</p>
                 </div>
             </div>
         </div>
@@ -362,209 +220,193 @@
 
     <script>
         const messagesDiv = document.getElementById('messages');
-        const resultsDiv = document.getElementById('results');
-        const userInput = document.getElementById('userInput');
-        const sendBtn = document.getElementById('sendBtn');
+        const resultsDiv  = document.getElementById('results');
+        const rightTitle  = document.getElementById('rightPanelTitle');
+        const userInput   = document.getElementById('userInput');
+        const sendBtn     = document.getElementById('sendBtn');
 
-        let currentPreferences = null;
+        // Client-side conversation state
+        let chatMessages = [];   // [{role, content}, ...]
+        let currentPhase = null;
 
-        // Send message on button click
+        // ── Event listeners ──────────────────────────
         sendBtn.addEventListener('click', sendMessage);
-
-        // Send message on Enter key
-        userInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
+        userInput.addEventListener('keypress', e => {
+            if (e.key === 'Enter') sendMessage();
         });
 
+        // ── Send a message ───────────────────────────
         async function sendMessage() {
-            const message = userInput.value.trim();
-            if (!message) return;
+            const text = userInput.value.trim();
+            if (!text) return;
 
-            // Disable input
             userInput.disabled = true;
             sendBtn.disabled = true;
-
-            // Add user message to chat
-            addMessage('user', message);
+            addBubble('user', text);
             userInput.value = '';
 
-            // Show loading
-            const loadingId = addMessage('bot', '<div class="loading"></div>');
+            const loadingId = addBubble('bot', '<div class="loading"></div>');
 
             try {
-                // Determine if this is initial extraction or refinement
-                const endpoint = currentPreferences ? '/api/refine' : '/api/extract';
-                const body = currentPreferences
-                    ? { preferences: currentPreferences, additional_input: message }
-                    : { user_input: message };
-
-                // Call API
-                const response = await fetch(endpoint, {
+                const resp = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(body)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: chatMessages,
+                        user_input: text,
+                    }),
                 });
-
-                const data = await response.json();
-
-                // Remove loading message
-                removeMessage(loadingId);
+                const data = await resp.json();
+                removeBubble(loadingId);
 
                 if (data.success) {
-                    // Store preferences for refinement
-                    currentPreferences = data.preferences;
-
-                    // Show conversational bot message
-                    const botMessage = data.bot_message || `✅ I've extracted your preferences! Check the panel on the right for details.`;
-                    addMessage('bot', botMessage);
-
-                    // Display results
-                    displayResults(data);
-
-                    // If preferences were saved to file, show notification
-                    if (data.saved_to_file) {
-                        addMessage('system', `💾 Your trip preferences have been saved to: ${data.saved_to_file}`);
-                    }
+                    chatMessages = data.messages;
+                    currentPhase = data.phase;
+                    addBubble('bot', data.assistant_message);
+                    updateRightPanel(data);
                 } else {
-                    addMessage('error', `❌ Error: ${data.error}`);
+                    addBubble('error', 'Error: ' + (data.error || 'Unknown error'));
                 }
-
-            } catch (error) {
-                removeMessage(loadingId);
-                addMessage('error', `❌ Failed to connect to server: ${error.message}`);
+            } catch (err) {
+                removeBubble(loadingId);
+                addBubble('error', 'Cannot reach server: ' + err.message);
             }
 
-            // Re-enable input
             userInput.disabled = false;
             sendBtn.disabled = false;
             userInput.focus();
         }
 
-        function addMessage(type, content) {
-            const messageId = 'msg-' + Date.now();
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
-            messageDiv.id = messageId;
-            messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-
-            // Debug logging
-            console.log(`Added ${type} message:`, content);
-            console.log('Total messages:', messagesDiv.children.length);
-
-            return messageId;
-        }
-
-        function removeMessage(messageId) {
-            const msg = document.getElementById(messageId);
-            if (msg) msg.remove();
-        }
-
-        function displayResults(data) {
-            const prefs = data.preferences;
-            const validation = data.validation;
-
-            resultsDiv.innerHTML = `
-                <!-- Validation Card -->
-                <div class="preference-card">
-                    <h3>✓ Validation</h3>
-                    <div class="preference-item">
-                        <span class="label">Status:</span>
-                        <span class="validation-badge ${validation.valid ? 'valid' : 'warning'}">
-                            ${validation.valid ? '✓ Valid' : '⚠ Has Issues'}
-                        </span>
-                    </div>
-                    <div class="preference-item">
-                        <span class="label">Completeness:</span>
-                        <span class="value">${(validation.completeness_score * 100).toFixed(0)}%</span>
-                    </div>
-                    ${validation.warnings.length > 0 ? `
-                    <div class="preference-item">
-                        <span class="label">Warnings:</span>
-                        <span class="value">${validation.warnings.join(', ')}</span>
-                    </div>
-                    ` : ''}
-                    ${validation.issues.length > 0 ? `
-                    <div class="preference-item">
-                        <span class="label">Issues:</span>
-                        <span class="value" style="color: #dc3545;">${validation.issues.join(', ')}</span>
-                    </div>
-                    ` : ''}
-                </div>
-
-                <!-- Destination Card -->
-                <div class="preference-card">
-                    <h3>🌍 Destination</h3>
-                    ${createItem('City', prefs.city || 'Not specified')}
-                    ${createItem('Country', prefs.country || 'Not specified')}
-                    ${prefs.location_preference ? createItem('Location Preference', prefs.location_preference) : ''}
-                </div>
-
-                <!-- Trip Details Card -->
-                <div class="preference-card">
-                    <h3>📅 Trip Details</h3>
-                    ${createItem('Start Date', prefs.start_date || 'Not specified')}
-                    ${createItem('End Date', prefs.end_date || 'Not specified')}
-                    ${createItem('Duration', prefs.duration_days ? `${prefs.duration_days} days` : 'Not specified')}
-                </div>
-
-                <!-- Budget Card -->
-                <div class="preference-card">
-                    <h3>💰 Budget</h3>
-                    ${createItem('Budget',
-                        prefs.budget ? `$${prefs.budget} ${prefs.budget_currency}` : 'Not specified'
-                    )}
-                </div>
-
-                <!-- Interests & Preferences Card -->
-                <div class="preference-card">
-                    <h3>🎯 Interests & Preferences</h3>
-                    ${createItem('Interests', prefs.interests?.length ? prefs.interests.join(', ') : 'None specified')}
-                    ${prefs.pace ? createItem('Travel Pace', prefs.pace) : ''}
-                </div>
-
-                <!-- Booking Preferences Card -->
-                ${prefs.booking_type && prefs.booking_type !== 'none' ? `
-                <div class="preference-card">
-                    <h3>🎫 Booking Preferences</h3>
-                    ${createItem('Booking Type', 
-                        prefs.booking_type === 'accommodation' ? 'Accommodation only (Airbnb)' :
-                        prefs.booking_type === 'transportation' ? 'Transportation only (Flight/Bus)' :
-                        prefs.booking_type === 'both' ? 'Both Accommodation & Transportation' :
-                        prefs.booking_type
-                    )}
-                </div>
-                ` : ''}
-            `;
-        }
-
-        function createItem(label, value) {
-            return `
-                <div class="preference-item">
-                    <span class="label">${label}:</span>
-                    <span class="value">${value}</span>
-                </div>
-            `;
-        }
-
-        // Check server health on load
-        fetch('/api/health')
-            .then(r => r.json())
-            .then(data => {
-                if (data.nlp_service_ready) {
-                    addMessage('system', `🟢 Connected to server | Model: ${data.model}`);
+        // ── Fetch greeting on page load ──────────────
+        async function fetchGreeting() {
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: [] }),
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    chatMessages = data.messages;
+                    currentPhase = data.phase;
+                    addBubble('bot', data.assistant_message);
+                    updateRightPanel(data);
                 } else {
-                    addMessage('error', '🔴 NLP service not ready. Check your .env configuration.');
+                    addBubble('error', 'Could not load greeting: ' + data.error);
                 }
-            })
-            .catch(() => {
-                addMessage('error', '🔴 Cannot connect to server. Make sure the backend is running.');
-            });
+            } catch (err) {
+                addBubble('error', 'Cannot connect to server. Is the backend running?');
+            }
+        }
+
+        // ── Right-panel rendering ────────────────────
+        function updateRightPanel(data) {
+            if (data.phase === 'itinerary') {
+                rightTitle.textContent = 'Your Itinerary';
+                let html = '';
+
+                // Weather summary card
+                if (data.weather_summary) {
+                    html += '<div class="info-card"><h3>Weather Forecast</h3>';
+                    html += '<div style="font-size:13px;line-height:1.8;color:#555;">';
+                    data.weather_summary.split(' | ').forEach(day => {
+                        html += '<div style="padding:4px 0;border-bottom:1px solid #f0f0f0;">' + day + '</div>';
+                    });
+                    html += '</div></div>';
+                }
+
+                // Budget summary card
+                if (data.budget_summary) {
+                    const b = data.budget_summary;
+                    html += '<div class="info-card"><h3>Budget Estimate</h3><ul>';
+                    html += '<li><span class="badge ' + (b.within_budget ? 'done' : 'missing') + '">'
+                        + (b.within_budget ? '&#10003; Within budget' : '&#9888; Over budget') + '</span></li>';
+                    if (b.cheapest_total != null)
+                        html += '<li>Cheapest estimate: <strong>$' + b.cheapest_total.toFixed(0) + ' CAD</strong></li>';
+                    if (b.average_total != null)
+                        html += '<li>Average estimate: <strong>$' + b.average_total.toFixed(0) + ' CAD</strong></li>';
+                    if (b.remaining_budget != null)
+                        html += '<li>Budget remaining: <strong>$' + b.remaining_budget.toFixed(0) + ' CAD</strong></li>';
+                    if (b.links) {
+                        html += '<li style="padding-top:8px;font-size:12px;">';
+                        if (b.links.airbnb)
+                            html += '<a href="' + b.links.airbnb + '" target="_blank" style="color:#667eea;">Airbnb</a> ';
+                        if (b.links.skyscanner)
+                            html += '<a href="' + b.links.skyscanner + '" target="_blank" style="color:#667eea;">Skyscanner</a>';
+                        html += '</li>';
+                    }
+                    html += '</ul></div>';
+                }
+
+                // Itinerary card
+                html += '<div class="info-card"><h3>Day-by-Day Plan</h3>'
+                    + '<div class="itinerary-view">'
+                    + formatItinerary(data.assistant_message)
+                    + '</div></div>';
+
+                // Route data card
+                if (data.route_data && data.route_data.length > 0) {
+                    html += '<div class="info-card"><h3>Getting Around</h3><ul>';
+                    data.route_data.forEach(leg => {
+                        html += '<li>';
+                        html += '<strong>' + leg.origin + '</strong> &rarr; <strong>' + leg.destination + '</strong>';
+                        if (leg.duration) html += ' &mdash; ' + leg.duration;
+                        if (leg.distance) html += ' (' + leg.distance + ')';
+                        if (leg.google_maps_link)
+                            html += ' <a href="' + leg.google_maps_link + '" target="_blank" style="color:#667eea;font-size:12px;">Map</a>';
+                        html += '</li>';
+                    });
+                    html += '</ul></div>';
+                }
+
+                resultsDiv.innerHTML = html;
+            } else {
+                rightTitle.textContent = 'Trip Status';
+                const needs = data.still_need || [];
+                const collected = ['travel dates','budget','interests','pace']
+                    .filter(f => !needs.some(n => n.toLowerCase().includes(f)));
+                let html = '<div class="info-card"><h3>What I know so far</h3><ul>';
+                collected.forEach(f => {
+                    html += '<li><span class="badge done">&#10003;</span> ' + capitalize(f) + '</li>';
+                });
+                needs.forEach(f => {
+                    html += '<li><span class="badge missing">?</span> ' + capitalize(f) + '</li>';
+                });
+                html += '</ul></div>';
+                resultsDiv.innerHTML = html;
+            }
+        }
+
+        function formatItinerary(text) {
+            // Highlight "Day N" headers and "Source:" citations
+            return text
+                .replace(/^(Day \d+)/gm, '<strong>$1</strong>')
+                .replace(/(Source:\s*[^)]+)/g, '<em style="color:#764ba2;font-size:12px;">$1</em>');
+        }
+
+        // ── Helpers ──────────────────────────────────
+        function addBubble(type, content) {
+            const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
+            const div = document.createElement('div');
+            div.className = 'message ' + type;
+            div.id = id;
+            div.innerHTML = '<div class="message-bubble">' + content + '</div>';
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return id;
+        }
+
+        function removeBubble(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        function capitalize(s) {
+            return s.charAt(0).toUpperCase() + s.slice(1);
+        }
+
+        // ── Boot ─────────────────────────────────────
+        fetchGreeting();
     </script>
 </body>
 </html>
