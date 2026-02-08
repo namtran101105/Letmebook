@@ -652,13 +652,8 @@ Return the complete updated JSON object with the same structure:"""
         Returns:
             Completeness score between 0.0 and 1.0
         """
-        # Required fields (location_preference is optional - useful for layovers/transits but not always needed)
-        required_fields = [
-            'city', 'country',
-            'start_date', 'end_date', 'duration_days',
-            'budget',
-            'interests', 'pace'
-        ]
+        # Required fields — budget, interests, duration_days are optional for MVP
+        required_fields = ['city', 'country', 'start_date', 'end_date', 'pace']
 
         filled_count = 0
         for field in required_fields:

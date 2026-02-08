@@ -73,7 +73,7 @@ Optional fields (nice to have, but not required):
 Budget is OPTIONAL - do not ask about it unless user brings it up.
 
 When you have city/country/dates/pace, ask:
-"Great! I have everything I need. Want me to create your personalized [City] itinerary?"
+"Great! I have everything I need. Want me to generate your itinerary for [City]?"
 
 Do NOT generate the itinerary until the user explicitly confirms.\
 """
@@ -270,10 +270,16 @@ class ConversationService:
         if not response_text:
             raise Exception("No LLM response - both Groq and Gemini failed")
 
-        messages.append({"role": "assistant", "content": response_text})
-
-        # Parse "Still need:" line
+        # Bug C fix: parse "Still need:" before stripping it from user-visible text
         still_need = self._parse_still_need(response_text)
+        # Strip any "Still need:" debug lines so they never reach the user
+        clean_lines = [
+            line for line in response_text.splitlines()
+            if not line.strip().lower().startswith("still need:")
+        ]
+        response_text = "\n".join(clean_lines).strip()
+
+        messages.append({"role": "assistant", "content": response_text})
 
         # Detect confirmation question
         phase = "intake"
@@ -329,7 +335,8 @@ class ConversationService:
 
         # ── Legacy path (no orchestrator) ─────────────────────────────
         loop = asyncio.get_running_loop()
-        
+        venues: List[Dict[str, Any]] = []  # Bug B fix: initialize before conditional
+
         # Extract city from conversation for dynamic venue fetching
         city = None
         for msg in messages:

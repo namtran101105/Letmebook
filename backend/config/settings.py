@@ -62,7 +62,7 @@ class Settings:
     # ===== Airflow / Venue Database =====
     APP_DB_URL: str = os.getenv(
         "APP_DB_URL",
-        "postgresql+psycopg2://app:app@localhost:5432/app",
+        "postgresql+psycopg2://app:app@localhost:5435/app",
     )
 
     # ===== Application Constants (Non-Negotiable MVP Rules) =====

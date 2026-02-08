@@ -24,7 +24,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from models.trip_preferences import TripPreferences
 from services.venue_service import VenueService, TORONTO_FALLBACK_VENUES
 from services.weather_service import WeatherService
-from services.trip_budget_service import TripBudgetService
 from services.google_maps_service import GoogleMapsService
 
 logger = logging.getLogger(__name__)

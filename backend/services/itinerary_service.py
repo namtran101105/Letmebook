@@ -258,7 +258,7 @@ class ItineraryService:
                     "Calling Groq API for itinerary generation",
                     extra={"request_id": request_id},
                 )
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 response_text = await loop.run_in_executor(
                     None,
                     lambda: self.groq_client.generate_json_content(
@@ -363,8 +363,8 @@ class ItineraryService:
         # --- Dates ---
         start = date.fromisoformat(v["start_date"])
         end = date.fromisoformat(v["end_date"])
-        if end <= start:
-            raise ValueError("end_date must be after start_date")
+        if end < start:
+            raise ValueError("end_date must be on or after start_date")
         calculated = (end - start).days + 1
         if v["duration_days"] != calculated:
             self.logger.warning(
