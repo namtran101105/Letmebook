@@ -50,7 +50,6 @@ from schemas.api_models import (
     ChatRequest,
     ChatResponse,
     ChatMessage,
-    BudgetSummary,
     RouteLeg,
 )
 from services.conversation_service import ConversationService
@@ -395,21 +394,12 @@ async def chat(body: ChatRequest):
 
         # Build enrichment fields for the response
         weather_summary = None
-        budget_summary = None
+        booking_links = None
         route_data = None
 
         if enrichment:
             weather_summary = enrichment.get("weather_summary")
-
-            raw_budget = enrichment.get("budget_summary")
-            if raw_budget:
-                budget_summary = BudgetSummary(
-                    within_budget=raw_budget.get("within_budget", False),
-                    cheapest_total=raw_budget.get("cheapest_total"),
-                    average_total=raw_budget.get("average_total"),
-                    remaining_budget=raw_budget.get("remaining_budget"),
-                    links=raw_budget.get("links"),
-                )
+            booking_links = enrichment.get("booking_links")
 
             raw_routes = enrichment.get("route_data")
             if raw_routes:
@@ -433,7 +423,7 @@ async def chat(body: ChatRequest):
             phase=phase,
             still_need=still_need,
             weather_summary=weather_summary,
-            budget_summary=budget_summary,
+            booking_links=booking_links,
             route_data=route_data,
         )
 

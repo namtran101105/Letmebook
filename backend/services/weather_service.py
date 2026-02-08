@@ -39,6 +39,12 @@ class WeatherService:
             "error": None
         }
 
+        # Validate city is provided
+        if not preferences.city or preferences.city == "None":
+            result["error"] = "City is required for weather forecast"
+            print("⚠️  Weather fetch skipped: City not provided")
+            return result
+
         # Build city string
         city = f"{preferences.city}"
         if preferences.country:
@@ -53,6 +59,19 @@ class WeatherService:
         if len(preferences.start_date) != 10 or len(preferences.end_date) != 10:
             result["error"] = f"Dates must be in YYYY-MM-DD format. Got: {preferences.start_date} to {preferences.end_date}"
             return result
+
+        # Check if dates are within forecast window (Open-Meteo supports up to 16 days ahead)
+        try:
+            start_dt = datetime.strptime(preferences.start_date, "%Y-%m-%d")
+            today = datetime.now().date()
+            days_ahead = (start_dt.date() - today).days
+            
+            if days_ahead > 16:
+                result["error"] = f"Weather forecast only available for up to 16 days ahead. Trip starts in {days_ahead} days."
+                print(f"⚠️  Weather forecast not available: Trip is {days_ahead} days ahead (max 16 days)")
+                return result
+        except ValueError:
+            pass  # Will be caught by format check below
 
         # Generate date range
         dates = self._generate_date_range(preferences.start_date, preferences.end_date)

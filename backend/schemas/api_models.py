@@ -221,11 +221,11 @@ class ChatResponse(BaseModel):
             "Null if weather data unavailable."
         ),
     )
-    budget_summary: Optional[BudgetSummary] = Field(
+    booking_links: Optional[Dict[str, str]] = Field(
         None,
         description=(
-            "Budget estimation with cost breakdown and booking links. "
-            "Null if budget estimation unavailable."
+            "Booking links for flight (Skyscanner) and/or accommodation (Airbnb). "
+            "Null if user did not request booking assistance."
         ),
     )
     route_data: Optional[List[RouteLeg]] = Field(

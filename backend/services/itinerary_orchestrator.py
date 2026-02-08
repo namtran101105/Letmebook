@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from models.trip_preferences import TripPreferences
 from services.venue_service import VenueService, TORONTO_FALLBACK_VENUES
 from services.weather_service import WeatherService
+from services.booking_service import BookingService
 from services.google_maps_service import GoogleMapsService
 
 logger = logging.getLogger(__name__)
@@ -80,38 +81,47 @@ _PACE_PATTERN = re.compile(
 # ── Itinerary system prompt (extended with weather context) ───────────
 
 ITINERARY_SYSTEM_PROMPT_TEMPLATE = """\
-You are a travel itinerary generator. You MUST ONLY use venues from \
-the venue list below. This is a hard constraint — do NOT invent venues.
+You are a travel itinerary generator. ONLY use venues from the list below.
 
 VENUE LIST — START
 {venue_catalogue}
 VENUE LIST — END
 {weather_context}
-Rules:
-1. Every Morning/Afternoon/Evening line MUST include a Source citation in \
-this exact format:
-   Source: <venue_id>, <url>
-   where venue_id and url come from the venue list above.
-2. Use this exact output format:
+STRICT OUTPUT RULES:
+1. Each day MUST have EXACTLY 2 meals: Lunch and Dinner \
+(use food/restaurant venues from the list).
+2. Activities per day (NON-MEAL time slots) based on pace:
+   - relaxed pace: 2 activities (Morning + Afternoon)
+   - moderate pace: 3 activities (Morning + Afternoon + Evening)
+   - packed pace: 4 activities (Early Morning + Morning + Afternoon + Evening)
+3. Every single line MUST include a Source citation in this exact format:
+   (Source: <venue_id>, <url>)
+4. Use this exact format per day:
 
-Day 1
-Morning: <activity description> — <venue_name> (Source: <venue_id>, <url>)
-Afternoon: <activity description> — <venue_name> (Source: <venue_id>, <url>)
-Evening: <activity description> — <venue_name> (Source: <venue_id>, <url>)
+Day 1 — [Date]
+Morning: <activity> — <venue_name> (Source: <venue_id>, <url>)
+Lunch: <meal description> — <restaurant_name> (Source: <venue_id>, <url>)
+Afternoon: <activity> — <venue_name> (Source: <venue_id>, <url>)
+Dinner: <meal description> — <restaurant_name> (Source: <venue_id>, <url>)
+
+(For moderate pace add Evening activity before Dinner; \
+for packed pace add Early Morning before Morning.)
 
 Day 2
 ...
 
-3. CLOSED-WORLD RULE: If the user asked for something that is NOT in the \
-venue list, refuse to invent it. Instead say you don't have it and offer \
-2-3 closest alternatives that ARE in the list (with Source citations).
-4. Do NOT add facts about a venue (prices, opening hours, events) unless \
-that information is present in the venue record above. Keep descriptions \
-generic if unsure.
-5. 100% SOURCE COVERAGE: Every single time-slot line must have a Source. \
-No exceptions.
-6. Respect the user's stated dates, budget, interests, and pace when \
-choosing venues and structuring the days.\
+5. CLOSED-WORLD RULE: Never invent venues. Only use venues from the list.
+6. Do NOT add facts not present in the venue record (prices, hours, events).
+7. 100% SOURCE COVERAGE: Every line must have a Source. No exceptions.
+8. Respect the user's stated dates, interests, and pace.
+9. At the very end, add:
+
+## Estimated Budget
+- Accommodation (per night): ~$X CAD
+- Activities total: ~$X CAD
+- Meals total: ~$X CAD
+- **Estimated Total: ~$X CAD**
+(Based on average tourist prices in the destination city)\
 """
 
 
@@ -131,13 +141,12 @@ class ItineraryOrchestrator:
             logger.warning("WeatherService init failed: %s", exc)
             self.weather_service = None
 
-        # Budget — DISABLED FOR MVP (budget is now optional)
-        # try:
-        #     self.budget_service: Optional[TripBudgetService] = TripBudgetService()
-        # except Exception as exc:
-        #     logger.warning("TripBudgetService init failed: %s", exc)
-        #     self.budget_service = None
-        self.budget_service = None  # Explicitly disabled for MVP
+        # Booking — Airbnb + Skyscanner links
+        try:
+            self.booking_service: Optional[BookingService] = BookingService()
+        except Exception as exc:
+            logger.warning("BookingService init failed: %s", exc)
+            self.booking_service = None
 
         # Google Maps — requires GOOGLE_MAPS_API_KEY; graceful if missing
         try:
@@ -154,9 +163,9 @@ class ItineraryOrchestrator:
             self.venue_service = None
 
         logger.info(
-            "ItineraryOrchestrator initialised — weather=%s budget=%s maps=%s venues=%s",
+            "ItineraryOrchestrator initialised — weather=%s booking=%s maps=%s venues=%s",
             self.weather_service is not None,
-            self.budget_service is not None,
+            self.booking_service is not None,
             self.maps_service is not None and self.maps_service.is_available(),
             self.venue_service is not None,
         )
@@ -168,21 +177,23 @@ class ItineraryOrchestrator:
     async def generate_enriched_itinerary(
         self,
         messages: List[Dict[str, str]],
-        llm_caller: Callable[..., str],
+        llm_caller: Callable[..., str] = None,
         use_groq: bool = True,
         use_gemini: bool = False,
         groq_client: Any = None,
         gemini_client: Any = None,
+        booking_type: str = "none",
+        source_location: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run the full enrichment pipeline and return an enriched result dict.
 
         Returns
         -------
         dict with keys:
-            itinerary_text   — LLM-generated itinerary (str, always present)
-            weather_summary  — human-readable weather line (str | None)
-            budget_summary   — budget dict (dict | None)
-            route_data       — list of route legs (list | None)
+            itinerary_text  — LLM-generated itinerary (str, always present)
+            weather_summary — human-readable weather line (str | None)
+            booking_links   — dict with flight/airbnb URLs (dict | None)
+            route_data      — list of route legs (list | None)
         """
         loop = asyncio.get_running_loop()
 
@@ -190,22 +201,21 @@ class ItineraryOrchestrator:
         preferences = self._extract_preferences_from_history(messages)
         logger.info("Extracted preferences: %s", preferences.to_dict())
 
-        # ── State D.1: parallel enrichment fetch (budget disabled for MVP) ─────────────────────
-        weather_result, venues = await asyncio.gather(
+        # ── State D.1: parallel enrichment fetch ─────────────────────
+        weather_result, venues, booking_result = await asyncio.gather(
             self._fetch_weather(loop, preferences),
             self._fetch_venues(loop, preferences.city),
+            self._fetch_booking(loop, preferences, booking_type, source_location),
             return_exceptions=True,
         )
-        # Budget is disabled for MVP
-        budget_result = None
 
         # Unwrap exceptions from gather
         if isinstance(weather_result, BaseException):
             logger.warning("Weather fetch raised: %s", weather_result)
             weather_result = None
-        if isinstance(budget_result, BaseException):
-            logger.warning("Budget fetch raised: %s", budget_result)
-            budget_result = None
+        if isinstance(booking_result, BaseException):
+            logger.warning("Booking fetch raised: %s", booking_result)
+            booking_result = None
         if isinstance(venues, BaseException):
             logger.warning("Venue fetch raised: %s", venues)
             venues = list(TORONTO_FALLBACK_VENUES)
@@ -259,12 +269,11 @@ class ItineraryOrchestrator:
 
         # ── State E: assemble response ───────────────────────────────
         weather_summary = self._format_weather_summary(weather_result)
-        budget_summary = self._format_budget_summary(budget_result)
 
         return {
             "itinerary_text": itinerary_text,
             "weather_summary": weather_summary,
-            "budget_summary": budget_summary,
+            "booking_links": self._format_booking_links(booking_result),
             "route_data": route_data,
         }
 
@@ -324,9 +333,10 @@ class ItineraryOrchestrator:
         # Try to extract city/country from conversation
         # Look for patterns like "visiting Paris", "trip to London", "traveling to Tokyo"
         city_patterns = [
-            r"(?:visit|visiting|trip to|traveling to|travel to|going to|go to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
-            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+trip",
+            r"(?:visit|visiting|trip to|traveling to|travel to|going to|go to|head to|headed to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:trip|itinerary)",
             r"in\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"to\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?:\s|,|\.|!|\?|$)",
         ]
         
         for pattern in city_patterns:
@@ -336,7 +346,8 @@ class ItineraryOrchestrator:
                 # Simple filter: skip common non-city words
                 if potential_city.lower() not in ["march", "april", "may", "june", "july", "august", 
                                                     "september", "october", "november", "december",
-                                                    "relaxed", "moderate", "packed", "weekend"]:
+                                                    "relaxed", "moderate", "packed", "weekend", 
+                                                    "canada", "france", "italy", "spain", "uk", "usa"]:
                     city = potential_city
                     break
         
@@ -346,6 +357,12 @@ class ItineraryOrchestrator:
             country_match = re.search(country_pattern, combined)
             if country_match:
                 country = country_match.group(1).strip()
+        
+        # Fallback: Default to Toronto if no city extracted
+        if not city:
+            logger.warning("No city extracted from conversation, defaulting to Toronto")
+            city = "Toronto"
+            country = "Canada"
         # -- Budget ----------------------------------------------------------
         for bm in _BUDGET_PATTERN.finditer(combined):
             raw = (bm.group("amount") or bm.group("amount2") or "").replace(",", "")
@@ -417,46 +434,56 @@ class ItineraryOrchestrator:
             logger.warning("Weather fetch failed: %s", exc)
             return None
 
-    async def _fetch_budget(
-        self, loop: asyncio.AbstractEventLoop, prefs: TripPreferences,
-    ) -> Optional[Dict[str, Any]]:
-        """Fetch budget estimation; returns None on any failure."""
-        if not self.budget_service:
-            return None
-        try:
-            result = await loop.run_in_executor(
-                None, self.budget_service.estimate_trip_budget, prefs
-            )
-            if result.get("error"):
-                logger.warning("BudgetService returned error: %s", result["error"])
-                return None
-            return result
-        except Exception as exc:
-            logger.warning("Budget fetch failed: %s", exc)
-            return None
-
     async def _fetch_venues(
-        self, 
+        self,
         loop: asyncio.AbstractEventLoop,
         city: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch venues for the specified city (DB or fallback). Always returns a list."""
         if not city:
             city = "Toronto"  # Default fallback
-            
+
         if self.venue_service:
             try:
                 venues = await loop.run_in_executor(
-                    None, 
+                    None,
                     lambda: self.venue_service.get_all_venues_for_city(city, limit=50),
                 )
                 if venues:
                     return venues
             except Exception as exc:
                 logger.warning("VenueService.get_all_venues_for_city failed for %s: %s", city, exc)
-        
+
         # Fallback to Toronto venues if DB query fails or no venues found
         return list(TORONTO_FALLBACK_VENUES)
+
+    async def _fetch_booking(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        prefs: TripPreferences,
+        booking_type: str,
+        source_location: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Trigger booking service for flight/Airbnb links; returns result or None."""
+        if not self.booking_service or booking_type == "none":
+            return None
+        booking_prefs = TripPreferences(
+            city=prefs.city,
+            country=prefs.country,
+            start_date=prefs.start_date,
+            end_date=prefs.end_date,
+            pace=prefs.pace,
+            interests=prefs.interests,
+            booking_type=booking_type,
+            source_location=source_location,
+        )
+        try:
+            return await loop.run_in_executor(
+                None, self.booking_service.book_trip, booking_prefs
+            )
+        except Exception as exc:
+            logger.warning("Booking fetch failed: %s", exc)
+            return None
 
     async def _call_llm(
         self,
@@ -600,24 +627,22 @@ class ItineraryOrchestrator:
         return " | ".join(parts)
 
     @staticmethod
-    def _format_budget_summary(
-        budget_result: Optional[Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
-        """Produce a compact budget summary dict for the API response."""
-        if not budget_result:
+    def _format_booking_links(
+        booking_result: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, str]]:
+        """Extract flight and Airbnb links from booking result for the API response."""
+        if not booking_result or booking_result.get("skipped"):
             return None
-
-        est = budget_result.get("estimation")
-        if not est:
-            return None
-
-        return {
-            "within_budget": est.get("within_budget", False),
-            "cheapest_total": est.get("cheapest_total", {}).get("total"),
-            "average_total": est.get("average_total", {}).get("total"),
-            "remaining_budget": est.get("remaining_at_cheapest"),
-            "links": est.get("links"),
-        }
+        links: Dict[str, str] = {}
+        accom = booking_result.get("accommodation")
+        if accom and "airbnb_link" in accom:
+            links["airbnb"] = accom["airbnb_link"]
+        trans = booking_result.get("transportation")
+        if trans:
+            flights = trans.get("flights")
+            if flights and "skyscanner_link" in flights:
+                links["flight"] = flights["skyscanner_link"]
+        return links if links else None
 
     # ------------------------------------------------------------------
     # Helpers

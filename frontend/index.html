@@ -363,15 +363,23 @@
             } else {
                 rightTitle.textContent = 'Trip Status';
                 const needs = data.still_need || [];
-                const collected = ['travel dates','budget','interests','pace']
-                    .filter(f => !needs.some(n => n.toLowerCase().includes(f)));
+                
+                // Required fields in display order
+                const requiredFields = ['city', 'country', 'travel dates', 'pace'];
+                
+                // Build the status display
                 let html = '<div class="info-card"><h3>What I know so far</h3><ul>';
-                collected.forEach(f => {
-                    html += '<li><span class="badge done">&#10003;</span> ' + capitalize(f) + '</li>';
+                
+                // Show each required field with its status
+                requiredFields.forEach(field => {
+                    const isNeeded = needs.some(n => n.toLowerCase().includes(field.toLowerCase()));
+                    if (isNeeded) {
+                        html += '<li><span class="badge missing">?</span> ' + capitalize(field) + '</li>';
+                    } else {
+                        html += '<li><span class="badge done">&#10003;</span> ' + capitalize(field) + '</li>';
+                    }
                 });
-                needs.forEach(f => {
-                    html += '<li><span class="badge missing">?</span> ' + capitalize(f) + '</li>';
-                });
+                
                 html += '</ul></div>';
                 resultsDiv.innerHTML = html;
             }
