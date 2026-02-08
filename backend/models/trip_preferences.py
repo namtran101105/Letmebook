@@ -11,9 +11,6 @@ import json
 class TripPreferences:
     """Structured trip preferences extracted from natural language."""
 
-    # trip_id: str
-    # user_input: str  # Original user message
-
     # City and country preferences
     city: Optional[str] = None
     country: Optional[str] = None
@@ -23,40 +20,17 @@ class TripPreferences:
     end_date: Optional[str] = None    # Format: YYYY-MM-DD
     duration_days: Optional[int] = None
 
-    # Budget
-    budget: Optional[float] = None
-    budget_currency: str = "CAD"
-
     # Interests and preferences
     interests: List[str] = None  # Categorized into: Food and Beverage, Entertainment, Culture and History, Sport, Natural Place
-    # activity_level: Optional[str] = None  # e.g., "relaxed", "moderate", "active"
     pace: Optional[str] = None  # "relaxed", "moderate", or "packed"
 
     # Drop off or location of stay
     location_preference: Optional[str] = None  # e.g., "downtown", "near nature", "historic district"
 
     # Booking preferences
-    booking_type: Optional[str] = None  # "accommodation", "transportation", "both", or "none" (user doesn't want to book)
-    source_location: Optional[str] = None  # Where user is traveling from (only needed if booking_type includes transportation)
-
-    # # Group information
-    # group_size: Optional[int] = None
-    # traveling_with: Optional[str] = None  # e.g., "family", "friends", "solo"
-
-    # # Accommodation preferences
-    # accommodation_type: Optional[str] = None  # e.g., "hotel", "airbnb", "hostel"
-
-    # # Specific requests
-    # must_see: List[str] = None  # Specific attractions or places
-    # must_avoid: List[str] = None  # Things to avoid
-
-    # # Additional preferences
-    # transportation_preference: Optional[str] = None  # e.g., "walking", "public transit", "car"
-    # weather_preference: Optional[str] = None
-
-    # # Metadata
-    # extracted_at: Optional[str] = None
-    # confidence_score: Optional[float] = None
+    needs_flight: Optional[bool] = None   # True = wants flight booking, False = no, None = not asked yet
+    needs_airbnb: Optional[bool] = None   # True = wants Airbnb booking, False = no, None = not asked yet
+    source_location: Optional[str] = None  # Where user is traveling from (only needed if needs_flight is True)
 
     # Pace synonym mapping → canonical values
     PACE_SYNONYMS = {
@@ -266,8 +240,10 @@ class TripPreferences:
 
     @classmethod
     def from_dict(cls, data: dict) -> 'TripPreferences':
-        """Create instance from dictionary."""
-        return cls(**data)
+        """Create instance from dictionary, ignoring unknown fields."""
+        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
 
     @classmethod
     def from_json(cls, json_str: str) -> 'TripPreferences':

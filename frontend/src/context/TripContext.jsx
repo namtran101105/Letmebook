@@ -4,10 +4,25 @@ import {
   extractPreferences,
   refinePreferences,
   generateItinerary as apiGenerateItinerary,
-  fetchWeather,
 } from "../api/tripApi";
 
 const TripContext = createContext(null);
+
+/**
+ * Compute the current conversation phase based on extracted preferences.
+ * Mirrors the backend _get_next_question_phase logic.
+ */
+function getNextQuestionPhase(prefs) {
+  if (!prefs) return null;
+  if (!prefs.city) return "city";
+  if (!prefs.country) return "country";
+  if (!prefs.start_date && !prefs.end_date && !prefs.duration_days) return "dates";
+  if (!prefs.pace) return "pace";
+  if (prefs.needs_flight === null || prefs.needs_flight === undefined) return "flight";
+  if (prefs.needs_flight && !prefs.source_location) return "source_location";
+  if (prefs.needs_airbnb === null || prefs.needs_airbnb === undefined) return "airbnb";
+  return null;
+}
 
 export function TripProvider({ children }) {
   const [phase, setPhase] = useState("welcome");
@@ -18,6 +33,7 @@ export function TripProvider({ children }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [itinerary, setItinerary] = useState(null);
   const [weather, setWeather] = useState(null);
+  const [booking, setBooking] = useState(null);
   const [backendConnected, setBackendConnected] = useState(null);
 
   useEffect(() => {
@@ -48,16 +64,21 @@ export function TripProvider({ children }) {
       setIsExtracting(true);
 
       try {
-        const data = preferences
-          ? await refinePreferences(preferences, text)
-          : await extractPreferences(text);
+        let data;
+        if (preferences) {
+          // Compute the last question asked so backend can interpret yes/no correctly
+          const lastQuestion = getNextQuestionPhase(preferences);
+          data = await refinePreferences(preferences, text, lastQuestion);
+        } else {
+          data = await extractPreferences(text);
+        }
 
         if (data.success) {
           setPreferences(data.preferences);
           setValidation(data.validation);
 
           const botMsg =
-            data.bot_message || "I've extracted your preferences. Check the panel on the right for details.";
+            data.bot_message || "I've updated your preferences. Check the panel on the right.";
           addMessage("bot", botMsg);
 
           if (data.saved_to_file) {
@@ -76,46 +97,43 @@ export function TripProvider({ children }) {
   );
 
   const doGenerateItinerary = useCallback(async () => {
+    if (!preferences) {
+      addMessage("bot", "Please complete your trip preferences first.");
+      return;
+    }
+
     setIsGenerating(true);
     try {
-      const data = await apiGenerateItinerary();
+      // Call the real backend — passes preferences, gets back itinerary + weather + booking
+      const data = await apiGenerateItinerary(preferences);
+
       if (data.success) {
         setItinerary(data.itinerary);
         setPhase("itinerary");
 
-        // Extract fallback weather from itinerary days (mock data)
-        const days = data.itinerary.days;
-        const fallback = {};
-        for (const d of days) {
-          if (d.weather) fallback[d.date] = d.weather;
+        // Set weather indexed by date
+        if (data.weather && data.weather.forecasts && data.weather.forecasts.length > 0) {
+          const byDate = {};
+          for (const f of data.weather.forecasts) {
+            byDate[f.date] = f;
+          }
+          setWeather(byDate);
+        } else {
+          // Fallback: extract weather embedded in itinerary days (if any)
+          const days = data.itinerary?.days || [];
+          const fallback = {};
+          for (const d of days) {
+            if (d.weather) fallback[d.date] = d.weather;
+          }
+          if (Object.keys(fallback).length > 0) setWeather(fallback);
         }
 
-        // Try fetching live weather from the API
-        if (days.length > 0) {
-          const city = preferences?.city || "Kingston";
-          const country = preferences?.country || "Canada";
-          const startDate = days[0].date;
-          const endDate = days[days.length - 1].date;
-          fetchWeather(city, country, startDate, endDate)
-            .then((res) => {
-              if (res.success && res.forecasts && res.forecasts.length > 0) {
-                const byDate = {};
-                for (const f of res.forecasts) {
-                  byDate[f.date] = f;
-                }
-                setWeather(byDate);
-              } else {
-                // API returned no forecasts (dates too far out); use fallback
-                setWeather(fallback);
-              }
-            })
-            .catch(() => {
-              // Backend unreachable; use fallback weather from itinerary
-              setWeather(fallback);
-            });
-        } else if (Object.keys(fallback).length > 0) {
-          setWeather(fallback);
+        // Store booking links
+        if (data.booking && !data.booking.skipped) {
+          setBooking(data.booking);
         }
+      } else {
+        addMessage("bot", data.error || "Failed to generate itinerary. Please try again.");
       }
     } catch (err) {
       addMessage("bot", `Failed to generate itinerary: ${err.message}`);
@@ -135,6 +153,7 @@ export function TripProvider({ children }) {
     setValidation(null);
     setItinerary(null);
     setWeather(null);
+    setBooking(null);
     setIsExtracting(false);
     setIsGenerating(false);
   }, []);
@@ -150,6 +169,7 @@ export function TripProvider({ children }) {
         isGenerating,
         itinerary,
         weather,
+        booking,
         backendConnected,
         sendMessage,
         generateItinerary: doGenerateItinerary,

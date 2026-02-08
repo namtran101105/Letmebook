@@ -41,7 +41,8 @@ class GeminiClient:
         self,
         api_key: Optional[str] = None,
         model_name: Optional[str] = None,
-        max_retries: int = 3,
+        max_retries: Optional[int] = None,
+        timeout: Optional[int] = None,
     ):
         """
         Initialise Gemini client.
@@ -50,13 +51,15 @@ class GeminiClient:
             api_key: Gemini API key (defaults to settings.GEMINI_KEY).
             model_name: Model identifier (defaults to settings.GEMINI_MODEL).
             max_retries: Maximum retry attempts for failed requests.
+            timeout: Request timeout in seconds.
         """
         # Lazy import to avoid circular dependency at module level
         from config.settings import settings
 
         self.api_key = api_key or settings.GEMINI_KEY
         self.model_name = model_name or settings.GEMINI_MODEL
-        self.max_retries = max_retries
+        self.max_retries = max_retries if max_retries is not None else settings.GEMINI_MAX_RETRIES
+        self.timeout = timeout if timeout is not None else settings.GEMINI_TIMEOUT
 
         if not self.api_key:
             raise ValueError("Gemini API key required — set GEMINI_KEY in .env")
@@ -108,6 +111,7 @@ class GeminiClient:
                 "model": self.model_name,
                 "prompt_length": len(prompt),
                 "temperature": temp,
+                "timeout": self.timeout,
             },
         )
 
@@ -115,13 +119,17 @@ class GeminiClient:
         for attempt in range(self.max_retries):
             try:
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: self.client.models.generate_content(
-                        model=self.model_name,
-                        contents=prompt,
-                        config=generation_config,
+                # Use asyncio timeout to prevent hanging
+                response = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: self.client.models.generate_content(
+                            model=self.model_name,
+                            contents=prompt,
+                            config=generation_config,
+                        ),
                     ),
+                    timeout=self.timeout,
                 )
 
                 result_text = response.text
@@ -135,6 +143,21 @@ class GeminiClient:
                 )
                 return result_text
 
+            except asyncio.TimeoutError:
+                last_error = asyncio.TimeoutError(f"Gemini API timeout after {self.timeout}s")
+                logger.warning(
+                    "Gemini API timeout (attempt %d/%d)",
+                    attempt + 1,
+                    self.max_retries,
+                    extra={
+                        "request_id": request_id,
+                        "timeout": self.timeout,
+                    },
+                )
+                if attempt < self.max_retries - 1:
+                    sleep_time = 1  # Shorter sleep time for timeouts
+                    logger.debug("Backing off for %ds", sleep_time)
+                    await asyncio.sleep(sleep_time)
             except Exception as exc:
                 last_error = exc
                 logger.warning(
@@ -148,7 +171,7 @@ class GeminiClient:
                     },
                 )
                 if attempt < self.max_retries - 1:
-                    sleep_time = 2 ** attempt  # 1s, 2s, 4s …
+                    sleep_time = 1  # Reduced sleep time: 1s instead of exponential backoff
                     logger.debug("Backing off for %ds", sleep_time)
                     await asyncio.sleep(sleep_time)
 

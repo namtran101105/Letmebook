@@ -19,11 +19,13 @@ export async function extractPreferences(userInput) {
   return res.json();
 }
 
-export async function refinePreferences(preferences, additionalInput) {
+export async function refinePreferences(preferences, additionalInput, lastQuestion = null) {
+  const body = { preferences, additional_input: additionalInput };
+  if (lastQuestion) body.last_question = lastQuestion;
   const res = await fetch(`${API_BASE}/api/refine`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ preferences, additional_input: additionalInput }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -42,8 +44,15 @@ export async function fetchWeather(city, country, startDate, endDate) {
   return res.json();
 }
 
-export async function generateItinerary() {
-  const { mockItinerary } = await import("../data/mockItinerary.js");
-  await new Promise((resolve) => setTimeout(resolve, 2500));
-  return { success: true, itinerary: mockItinerary };
+export async function generateItinerary(preferences) {
+  const res = await fetch(`${API_BASE}/api/generate-itinerary`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ preferences }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Itinerary generation failed");
+  }
+  return res.json();
 }

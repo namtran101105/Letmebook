@@ -26,34 +26,37 @@ class BookingService:
 
     def book_trip(self, preferences: TripPreferences) -> Dict[str, Any]:
         """
-        Orchestrate all bookings based on user's booking preferences.
+        Orchestrate bookings based on needs_flight and needs_airbnb flags.
 
         Args:
-            preferences: TripPreferences with booking_type specified
+            preferences: TripPreferences with needs_flight and needs_airbnb set
 
         Returns:
             Dictionary with booking results and links
         """
+        needs_flight = getattr(preferences, 'needs_flight', False) or False
+        needs_airbnb = getattr(preferences, 'needs_airbnb', False) or False
+
         results = {
-            "booking_type": preferences.booking_type,
+            "needs_flight": needs_flight,
+            "needs_airbnb": needs_airbnb,
             "accommodation": None,
             "transportation": None,
             "skipped": False
         }
 
-        # Check booking type
-        if not preferences.booking_type or preferences.booking_type == "none":
+        if not needs_flight and not needs_airbnb:
             results["skipped"] = True
-            results["message"] = "User opted out of booking assistance"
-            print("⏭️  Skipping bookings - user chose 'none'")
+            results["message"] = "No bookings requested"
+            print("⏭️  Skipping bookings - none requested")
             return results
 
-        # Book accommodation if requested
-        if preferences.booking_type in ["accommodation", "both"]:
+        # Book accommodation (Airbnb) if requested
+        if needs_airbnb:
             results["accommodation"] = self._book_accommodation(preferences)
 
-        # Book transportation if requested
-        if preferences.booking_type in ["transportation", "both"]:
+        # Book transportation (flights) if requested
+        if needs_flight:
             results["transportation"] = self._book_transportation(preferences)
 
         return results
@@ -211,13 +214,14 @@ class BookingService:
         Returns:
             Formatted summary string
         """
-        booking_type = booking_results.get("booking_type")
-        
         if booking_results.get("skipped"):
-            return "No bookings made - user opted out of booking assistance."
+            return "No bookings made - none requested."
 
         summary_parts = []
-        summary_parts.append(f"Booking Type: {booking_type}")
+        if booking_results.get("needs_flight"):
+            summary_parts.append("✈️ Flight booking requested")
+        if booking_results.get("needs_airbnb"):
+            summary_parts.append("🏠 Airbnb booking requested")
         summary_parts.append("")
 
         # Accommodation summary
@@ -269,11 +273,11 @@ def main():
         country="Canada",
         start_date="2026-06-15",
         end_date="2026-06-20",
-        budget=2000.0,
         interests=["Food and Beverage"],
         pace="relaxed",
         location_preference="downtown",
-        booking_type="both",
+        needs_flight=True,
+        needs_airbnb=True,
         source_location="Montreal"
     )
     
@@ -290,11 +294,11 @@ def main():
         country="Canada",
         start_date="2026-06-15",
         end_date="2026-06-20",
-        budget=1000.0,
         interests=["Culture and History"],
         pace="moderate",
-        booking_type="accommodation",
-        source_location=None  # Not needed for accommodation only
+        needs_airbnb=True,
+        needs_flight=False,
+        source_location=None
     )
     
     results2 = service.book_trip(preferences2)
@@ -309,10 +313,10 @@ def main():
         country="Canada",
         start_date="2026-06-15",
         end_date="2026-06-20",
-        budget=500.0,
         interests=["Sport"],
         pace="packed",
-        booking_type="transportation",
+        needs_flight=True,
+        needs_airbnb=False,
         source_location="Ottawa"
     )
     
@@ -328,10 +332,10 @@ def main():
         country="Canada",
         start_date="2026-06-15",
         end_date="2026-06-20",
-        budget=1500.0,
         interests=["Entertainment"],
         pace="relaxed",
-        booking_type="none",
+        needs_flight=False,
+        needs_airbnb=False,
         source_location=None
     )
     

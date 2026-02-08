@@ -42,3 +42,7 @@ airflow/logs/
 airflow/*.db
 airflow/*.pid
 doc/todo.md
+
+# Frontend
+frontend/node_modules/
+node_modules/

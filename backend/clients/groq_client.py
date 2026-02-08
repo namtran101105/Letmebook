@@ -10,21 +10,27 @@ from config.settings import settings
 class GroqClient:
     """Client for interacting with Groq API."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, timeout: Optional[int] = None):
         """
         Initialize Groq client.
 
         Args:
             api_key: Optional API key. If not provided, uses settings.GROQ_API_KEY
+            timeout: Request timeout in seconds. Defaults to settings.GROQ_TIMEOUT
         """
         self.api_key = api_key or settings.GROQ_API_KEY
         self.model = settings.GROQ_MODEL
+        self.timeout = timeout if timeout is not None else settings.GROQ_TIMEOUT
+        
+        print(f"🔧 GroqClient initialized with model: {self.model}")
+        print(f"📌 Settings.GROQ_MODEL = {settings.GROQ_MODEL}")
+        print(f"⏱️  Timeout: {self.timeout}s")
 
         if not self.api_key:
             raise ValueError("Groq API key is required")
 
-        # Initialize Groq client
-        self.client = Groq(api_key=self.api_key)
+        # Initialize Groq client with timeout
+        self.client = Groq(api_key=self.api_key, timeout=self.timeout)
 
     def generate_content(
         self,

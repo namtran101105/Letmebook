@@ -1,6 +1,7 @@
 """
 NLP service for extracting structured trip preferences from natural language input.
 Uses Groq API (primary) or Gemini API (fallback) to parse user messages and extract travel details.
+Supports multi-turn conversation to collect all required fields including flight/Airbnb needs.
 """
 import json
 import os
@@ -60,14 +61,13 @@ class NLPExtractionService:
 
     def _build_system_instruction(self) -> str:
         """Build the system instruction for the AI model."""
-        return """You are a travel planning assistant specializing in extracting structured information from natural language.
+        return """You are a friendly travel planning assistant specializing in extracting structured information from natural language.
 
         Your task is to analyze user messages about their trip and extract relevant details into a structured JSON format.
 
         Extract the following information when available:
         - City and country (if mentioned)
         - Travel dates (start_date, end_date in YYYY-MM-DD format, or duration_days)
-        - Budget (OPTIONAL - single value in CAD)
         - Interests: Classify into EXACTLY these 5 categories (use only these names):
           * "Food and Beverage" — restaurants, cafes, food tours, breweries, wine, street food, dining, etc.
           * "Entertainment" — shopping, casino, spa, bar, pub, arcade, nightlife, cinema, concerts, zoo, aquarium, etc.
@@ -78,8 +78,9 @@ class NLPExtractionService:
         - Pace of travel (relaxed, moderate, packed). Synonyms: relax/chill/slow/leisurely/easy → "relaxed", balanced/normal/steady → "moderate", fast/rush/busy/intense/active → "packed"
         - Location preference for drop-off or stay (e.g., "downtown", "near nature", "historic district", or "flexible")
         - Booking needs:
-          * booking_type: "accommodation" (hotel/airbnb), "transportation" (flights/buses), "both", or "none"
-          * source_location: Where user is traveling from (only if they mention booking flights or want transportation)
+          * needs_flight: true if user says yes to needing a flight ticket, false if they say no, null if not yet asked or answered
+          * needs_airbnb: true if user says yes to needing Airbnb/accommodation, false if they say no, null if not yet asked or answered
+          * source_location: Where user is traveling from (only if needs_flight is true and they mention their departure city)
 
         Rules:
         1. Only extract information explicitly mentioned or strongly implied
@@ -90,14 +91,10 @@ class NLPExtractionService:
            - Season: Store as "season YYYY" (e.g., "winter" → "winter 2026", "summer 2024" → "summer 2024")
            - Flexible: If user says "flexible", "anytime", "not sure yet" → set start_date to "flexible"
            - Duration: Extract number of days/weeks (e.g., "5 days" → duration_days: 5, "2 weeks" → duration_days: 14)
-        4. For budget, extract a single value (if a range is given, use the midpoint or maximum). Budget is OPTIONAL.
-        5. For interests, classify into the 5 categories listed above. Return only the matching category names, not the raw activities
-        6. For booking_type, detect:
-           - "accommodation": mentions hotel, airbnb, place to stay, accommodation, lodging, where to stay
-           - "transportation": mentions flights, plane, fly, bus, train, getting there, travel to
-           - "both": mentions both accommodation and transportation
-           - "none" or null: doesn't mention booking needs
-        7. For source_location, extract city/airport when user mentions: "from [city]", "coming from [city]", "traveling from [city]", "live in [city]"
+        4. For interests, classify into the 5 categories listed above. Return only the matching category names, not the raw activities
+        5. For needs_flight: detect from user saying "yes" to flight question, "I need a flight", "flying from X", etc.
+        6. For needs_airbnb: detect from user saying "yes" to Airbnb question, "I need accommodation", "book an Airbnb", etc.
+        7. For source_location, extract city/airport when user mentions: "from [city]", "coming from [city]", "flying from [city]", "I live in [city]"
         8. Be conservative - better to leave something null than to guess incorrectly
         9. Return valid JSON only, no additional text"""
 
@@ -117,13 +114,12 @@ class NLPExtractionService:
             "start_date": "string or null (YYYY-MM-DD)",
             "end_date": "string or null (YYYY-MM-DD)",
             "duration_days": "integer or null",
-            "budget": "number or null (OPTIONAL)",
-            "budget_currency": "string (default: CAD)",
             "interests": "array of strings — ONLY use these exact category names: 'Food and Beverage', 'Entertainment', 'Culture and History', 'Sport', 'Natural Place'. Can be empty array.",
             "pace": "string or null (relaxed/moderate/packed). Map synonyms: relax/chill/slow/easy → relaxed, fast/rush/busy/intense → packed",
             "location_preference": "string or null (e.g., downtown, near nature, historic district, or 'flexible')",
-            "booking_type": "string or null ('accommodation', 'transportation', 'both', or 'none'). Extract from user mentioning hotels, flights, etc.",
-            "source_location": "string or null (city/airport user is traveling from, only if booking transportation mentioned)"
+            "needs_flight": "boolean or null — true if user says yes to needing a flight, false if no, null if not mentioned yet",
+            "needs_airbnb": "boolean or null — true if user says yes to needing Airbnb, false if no, null if not mentioned yet",
+            "source_location": "string or null (city user is flying from, only if needs_flight is true)"
         }
 
         prompt = f"""Extract travel preferences from this user message:
@@ -138,9 +134,6 @@ class NLPExtractionService:
         - Use null for missing information
         - Return arrays as empty [] if no items are mentioned
         - Location: If user says "anywhere", "no preference", "flexible" → set location_preference to "flexible"
-        - Budget: OPTIONAL - only extract if mentioned
-        - Booking: Extract booking_type if user mentions hotels, flights, airbnb, accommodation, or transportation needs
-        - Source location: Only extract if user mentions where they're traveling from AND wants booking assistance
         - Dates:
           * Specific dates → "YYYY-MM-DD" format
           * Month only → "YYYY-MM" or "Month YYYY" format
@@ -149,6 +142,8 @@ class NLPExtractionService:
           * Duration → number of days in duration_days field
         - If start_date + end_date are provided, duration_days will be auto-calculated (you can leave it null)
         - If start_date + duration_days are provided, end_date will be auto-calculated (you can leave it null)
+        - needs_flight: only set to true/false if user explicitly responds to this question. Otherwise null.
+        - needs_airbnb: only set to true/false if user explicitly responds to this question. Otherwise null.
         - Return ONLY valid JSON, no additional text or explanation
 
         JSON response:"""
@@ -206,7 +201,7 @@ class NLPExtractionService:
                 raise ValueError("No LLM client available")
 
             # Create TripPreferences object
-            preferences = TripPreferences(**extracted_data)
+            preferences = TripPreferences.from_dict(extracted_data)
 
             # Auto-calculate missing date fields
             preferences = self._calculate_date_fields(preferences)
@@ -215,6 +210,33 @@ class NLPExtractionService:
 
         except Exception as e:
             raise Exception(f"Failed to extract preferences: {str(e)}")
+
+    def _get_next_question_phase(self, preferences: TripPreferences) -> Optional[str]:
+        """
+        Determine the next piece of information needed in the conversation.
+
+        Returns the phase name, or None if all questions have been asked.
+        """
+        # Phase 1: Required fields
+        if not preferences.city:
+            return "city"
+        if not preferences.country:
+            return "country"
+        if not preferences.start_date and not preferences.end_date and not preferences.duration_days:
+            return "dates"
+        if not preferences.pace:
+            return "pace"
+
+        # Phase 2: Booking questions (asked after required fields are complete)
+        if preferences.needs_flight is None:
+            return "flight"
+        if preferences.needs_flight and not preferences.source_location:
+            return "source_location"
+        if preferences.needs_airbnb is None:
+            return "airbnb"
+
+        # All done
+        return None
 
     async def generate_conversational_response(
         self,
@@ -233,15 +255,13 @@ class NLPExtractionService:
             is_refinement: Whether this is a refinement (True) or initial extraction (False)
 
         Returns:
-            Natural language bot response string
+            Tuple of (bot_response_string, all_questions_asked)
         """
-        # Build context-aware prompt
-        completeness_pct = int(validation['completeness_score'] * 100)
+        # Determine the next question needed
+        next_phase = self._get_next_question_phase(preferences)
+        all_questions_asked = next_phase is None
 
-        # Check if all preferences are complete (100%)
-        is_complete = validation['completeness_score'] >= 1.0
-
-        # Prepare extracted info summary
+        # Build context summary of what's been extracted
         extracted_info = []
         if preferences.city:
             extracted_info.append(f"City: {preferences.city}")
@@ -255,200 +275,105 @@ class NLPExtractionService:
             extracted_info.append(f"End date: {preferences.end_date}")
         elif preferences.duration_days:
             extracted_info.append(f"Duration: {preferences.duration_days} days")
-
-        if preferences.budget:
-            budget_str = f"${preferences.budget} {preferences.budget_currency}"
-            if preferences.duration_days and preferences.duration_days > 0:
-                daily = preferences.budget / preferences.duration_days
-                budget_str += f" (~${daily:.0f}/day)"
-            elif preferences.start_date and preferences.end_date:
-                # Calculate days between dates
-                from datetime import datetime
-                try:
-                    start = datetime.strptime(preferences.start_date, "%Y-%m-%d")
-                    end = datetime.strptime(preferences.end_date, "%Y-%m-%d")
-                    days = (end - start).days + 1
-                    if days > 0:
-                        daily = preferences.budget / days
-                        budget_str += f" (~${daily:.0f}/day)"
-                except:
-                    pass
-            extracted_info.append(f"Budget: {budget_str}")
-
         if preferences.interests and len(preferences.interests) > 0:
             extracted_info.append(f"Interests: {', '.join(preferences.interests)}")
-
         if preferences.pace:
             extracted_info.append(f"Pace: {preferences.pace}")
-
         if preferences.location_preference:
             extracted_info.append(f"Location preference: {preferences.location_preference}")
+        if preferences.needs_flight is not None:
+            extracted_info.append(f"Needs flight: {'Yes' if preferences.needs_flight else 'No'}")
+        if preferences.needs_flight and preferences.source_location:
+            extracted_info.append(f"Flying from: {preferences.source_location}")
+        if preferences.needs_airbnb is not None:
+            extracted_info.append(f"Needs Airbnb: {'Yes' if preferences.needs_airbnb else 'No'}")
 
         extracted_summary = "\n".join(extracted_info) if extracted_info else "No specific details extracted yet"
 
-        # Check for specific missing fields in priority order:
-        # 1. City, 2. Country, 3. Location preference, 4. Dates, 5. Interests & Pace, 6. Budget
-        missing_fields = []
-
-        # Priority 1: City
-        if not preferences.city:
-            missing_fields.append("city")
-
-        # Priority 2: Country
-        if not preferences.country:
-            missing_fields.append("country")
-
-        # Priority 3: Location preference
-        if not preferences.location_preference:
-            missing_fields.append("location preference")
-
-        # Priority 4: Dates (start/end date + duration)
-        if not preferences.start_date and not preferences.end_date and not preferences.duration_days:
-            missing_fields.append("dates (start date, end date, or duration)")
-
-        # Priority 5: Interests and Pace
-        if not preferences.interests or len(preferences.interests) == 0:
-            missing_fields.append("interests")
-        if not preferences.pace:
-            missing_fields.append("pace")
-
-        # Budget is OPTIONAL for MVP - not checked
-
-        missing_fields_str = ", ".join(missing_fields) if missing_fields else "None"
-
-        # Check if all questions have been asked (no missing fields)
-        all_questions_asked = len(missing_fields) == 0
+        # Map next phase to question description
+        phase_to_question = {
+            "city": "which city they'd like to visit",
+            "country": "which country that city is in",
+            "dates": "their travel dates (start date, end date, or how many days)",
+            "pace": "their preferred travel pace: relaxed, moderate, or packed",
+            "flight": "if they're coming from far away and whether they need a flight ticket booked",
+            "source_location": "which city they'll be flying from",
+            "airbnb": "if they need to book an Airbnb for their stay",
+        }
 
         # Debug logging
         print(f"\n=== Conversational Response Debug ===")
         print(f"User input: {user_input}")
-        print(f"Completeness: {completeness_pct}%")
-        print(f"Is complete: {is_complete}")
-        print(f"All questions asked: {all_questions_asked} (will save JSON: {'YES' if all_questions_asked else 'NO'})")
+        print(f"Next phase: {next_phase}")
+        print(f"All questions asked: {all_questions_asked}")
         print(f"Extracted summary:\n{extracted_summary}")
-        print(f"Missing fields: {missing_fields_str}")
         print(f"=====================================\n")
 
-        # Build prompt based on completeness
-        if is_complete:
-            # All preferences are filled - ask for simple confirmation
-            system_instruction = """You are a friendly travel assistant. Your role is to:
-1. Acknowledge that you have all the information needed
-2. Briefly confirm the key trip details (destination, dates, interests, pace)
-3. Ask ONLY for confirmation - a simple yes/no question
-4. Be warm, encouraging, and very concise (1-2 sentences max)
-5. Use a friendly tone
+        if all_questions_asked:
+            # All info collected — ask for confirmation before generating itinerary
+            system_instruction = """You are a warm and friendly travel assistant. All trip details have been collected.
+Your job is to:
+1. Briefly confirm the key trip details in 1-2 sentences (destination, dates, pace, and any booking needs)
+2. Ask if they're ready to generate their personalized itinerary
+Be concise, warm, and encouraging. Do NOT ask for more details."""
 
-Important:
-- Do NOT ask for more information - all preferences are complete
-- Do NOT mention budget - that's optional
-- Do NOT offer to add more details or make changes
-- Simple confirmation only: "Want me to create your personalized itinerary?", "Ready for me to create your itinerary?"
-- Be positive and direct"""
+            booking_summary = []
+            if preferences.needs_flight:
+                booking_summary.append(f"flight from {preferences.source_location}")
+            if preferences.needs_airbnb:
+                booking_summary.append("Airbnb accommodation")
+            booking_str = f", including {' and '.join(booking_summary)}" if booking_summary else ""
 
-            context_type = "refinement/update" if is_refinement else "initial message"
+            prompt = f"""The user just said: "{user_input}"
 
-            prompt = f"""The user sent this {context_type}: "{user_input}"
-
-I have now collected ALL required trip preferences:
+All trip details are now complete:
 {extracted_summary}
 
-Validation results:
-- Completeness: 100% (ALL FIELDS COMPLETE)
-- Valid: {validation['valid']}
-- Warnings: {', '.join(validation['warnings']) if validation['warnings'] else 'None'}
-- Issues: {', '.join(validation['issues']) if validation['issues'] else 'None'}
+Booking arrangements{booking_str}.
 
-Generate a conversational response that:
-1. {"Acknowledges the update" if is_refinement else "Acknowledges completion"}
-2. Briefly confirms the key details in ONE sentence (destination, dates, main interest)
-3. Asks ONLY for confirmation - a simple question expecting yes/no
-4. Is warm and encouraging (1-2 sentences MAXIMUM)
-5. Does NOT ask if they want to add more or make changes
-6. Does NOT list every single detail - keep it brief
-
-Example: "Perfect! I have your Kingston trip from Feb 15-17 with museum visits and fast pace. Shall I proceed with planning your itinerary?"
+Generate a warm confirmation (1-2 sentences) summarizing the key trip details and asking if they're ready to generate their itinerary.
 
 Response:"""
         else:
-            # Preferences incomplete - continue asking for missing info
-            system_instruction = """You are a friendly travel assistant helping plan a trip.
+            # Still collecting info — ask for the next required field
+            next_question_desc = phase_to_question.get(next_phase, next_phase)
 
-Your job is to gather the essential details through natural conversation:
-1. City (which city to visit)
-2. Country (which country that city is in)
-3. Travel dates (when are you visiting?)
-4. Pace (how busy do you want each day? relaxed, moderate, or packed)
-5. Interests (OPTIONAL - what do you enjoy? food, culture, sports, nature, entertainment)
-6. Location preference (OPTIONAL - where would you like to stay? downtown, near parks, etc.)
-7. Booking needs (OPTIONAL - do you need help booking flights or accommodation?)
-8. Where from (OPTIONAL - if user wants flights, where are they traveling from?)
-
+            system_instruction = """You are a warm, friendly travel assistant having a natural conversation.
 Guidelines:
-- Be warm and conversational, not robotic
-- Ask ONE question at a time when information is missing  
-- If the user mentions interests, acknowledge them specifically
-- If interests are not mentioned, that's fine - we'll create a balanced mix
-- Budget is optional - don't ask about it unless user brings it up
-- If user mentions booking flights/hotels, ask where they're traveling from (for flight links)
-- Do NOT show internal fields like 'Still need: ...' - that's for debugging only
-- Do NOT mention processes like 'processing' or 'analyzing' - just respond naturally
-
-RULES:
-1. Acknowledge what the user just shared
-2. Ask for the NEXT missing field from the priority list
-3. Keep responses SHORT (2 sentences max)
-4. NEVER re-ask for fields already provided
-5. Be warm and encouraging"""
-
-            context_type = "refinement/update" if is_refinement else "initial message"
-
-            # Determine the next field(s) to ask for based on priority (budget removed)
-            next_field_to_ask = None
-            if "city" in missing_fields_str:
-                next_field_to_ask = "city (which city do you want to visit?)"
-            elif "country" in missing_fields_str:
-                next_field_to_ask = "country (which country is that city in?)"
-            elif "dates" in missing_fields_str:
-                next_field_to_ask = "dates (when will you travel? Please provide start date, end date, or duration)"
-            elif "pace" in missing_fields_str:
-                next_field_to_ask = "pace (what pace do you prefer for your trip: relaxed, moderate, or packed?)"
-            elif "interests" in missing_fields_str:
-                next_field_to_ask = "interests (OPTIONAL - what are you interested in? Choose from: Food & Beverage, Entertainment, Culture & History, Sport, or Natural Places — or just describe what you enjoy! You can also skip this if you want a balanced mix)"
-            elif "location preference" in missing_fields_str:
-                next_field_to_ask = "location preference (OPTIONAL - where in the city will you stay? e.g., downtown, near airport, or say 'flexible' if you don't have a preference)"
+- Acknowledge what the user just shared (be specific and positive)
+- Ask for the NEXT missing piece of information
+- Keep it brief: 1-2 sentences max
+- Be conversational, not robotic
+- Never re-ask for info already provided
+- For the flight question: be casual, e.g. "Are you traveling from far away? Would you like me to help find a flight?"
+- For the Airbnb question: be casual, e.g. "Would you like me to find an Airbnb for your stay?"
+- Budget is never asked about — it's not needed"""
 
             prompt = f"""User just said: "{user_input}"
 
-What I extracted from their message:
-{extracted_summary if extracted_summary != "No specific details extracted yet" else "Nothing new yet"}
+What I know so far:
+{extracted_summary if extracted_summary != "No specific details extracted yet" else "Nothing yet — this is the first message"}
 
-Missing information: {missing_fields_str}
+Next thing to ask about: {next_question_desc}
 
-TASK: Write a brief, friendly response (2 sentences max) that:
-1. Acknowledges what they just shared
-2. Asks for: {next_field_to_ask}
-
-Example format: "Got it, [acknowledge their input]! [Ask for next field?]"
+Write a brief, friendly response (1-2 sentences) that acknowledges their input and asks for: {next_question_desc}
 
 Response:"""
 
         try:
             # Generate conversational response using available LLM
             if self.use_groq and self.groq_client:
-                # Groq API (sync → thread pool)
                 loop = asyncio.get_running_loop()
                 response = await loop.run_in_executor(
                     None,
                     lambda: self.groq_client.generate_content(
                         prompt=prompt,
                         system_instruction=system_instruction,
-                        temperature=0.7,  # Higher temp for more natural variety
-                        max_tokens=300,  # Keep responses concise
+                        temperature=0.7,
+                        max_tokens=300,
                     ),
                 )
             elif self.use_gemini and self.gemini_client:
-                # Gemini API (async)
                 response = await self.gemini_client.generate_content(
                     prompt=prompt,
                     system_instruction=system_instruction,
@@ -459,21 +384,24 @@ Response:"""
                 raise ValueError("No LLM client available")
 
             print(f"Generated response: {response.strip()}")
-            print(f"All questions asked: {all_questions_asked}")
             return response.strip(), all_questions_asked
 
         except Exception as e:
-            # Fallback to static message if generation fails
             print(f"Warning: Failed to generate conversational response: {e}")
             import traceback
             traceback.print_exc()
-            fallback_message = "✅ I've updated your preferences! Check the panel on the right for details." if is_refinement else "✅ I've extracted your preferences! Check the panel on the right for details."
-            return fallback_message, all_questions_asked
+            fallback = "Got it! " + (
+                "I have all the info I need. Ready to generate your itinerary?"
+                if all_questions_asked
+                else f"Could you tell me your {next_question_desc}?"
+            )
+            return fallback, all_questions_asked
 
     async def refine_preferences(
         self,
         existing_preferences: TripPreferences,
-        additional_input: str
+        additional_input: str,
+        last_question: Optional[str] = None
     ) -> TripPreferences:
         """
         Refine existing preferences with additional user input.
@@ -481,36 +409,48 @@ Response:"""
         Args:
             existing_preferences: Previously extracted preferences
             additional_input: New user input to incorporate
+            last_question: The conversation phase that was last asked (for context)
 
         Returns:
             Updated TripPreferences object
         """
-        # Build a prompt that includes existing preferences
+        # Add context about what was last asked so the AI can interpret "yes/no" answers correctly
+        context_hints = {
+            "flight": "The assistant just asked if the user needs a flight ticket. 'yes'/'sure'/'yeah' means needs_flight=true, 'no'/'nope'/'don't need one' means needs_flight=false.",
+            "source_location": "The assistant just asked where the user will be flying from. Extract the city/location as source_location.",
+            "airbnb": "The assistant just asked if the user needs Airbnb accommodation. 'yes'/'sure'/'yeah' means needs_airbnb=true, 'no'/'nope'/'don't need it' means needs_airbnb=false.",
+        }
+        context_note = ""
+        if last_question and last_question in context_hints:
+            context_note = f"\nCONVERSATION CONTEXT: {context_hints[last_question]}\n"
+
         prompt = f"""You have previously extracted these preferences from a user:
 
 {existing_preferences.to_json()}
 
 The user has now provided additional information:
 "{additional_input}"
-
+{context_note}
 CRITICAL INSTRUCTIONS:
 1. PRESERVE ALL EXISTING VALUES that are not explicitly updated by the new information
 2. If the user provides ONLY a country, keep the existing city value - do NOT set city to null
 3. If the user provides ONLY a city, keep the existing country value - do NOT set country to null
-4. If the user says "anywhere", "no preference", "flexible", "anywhere is fine", "anywhere is okay" for location → set location_preference to "flexible"
+4. If the user says "anywhere", "no preference", "flexible", "anywhere is fine" for location → set location_preference to "flexible"
 5. Only update fields that are explicitly mentioned or clearly implied in the new input
 6. NEVER remove or null out existing values unless the new information directly contradicts them
+7. For needs_flight/needs_airbnb: interpret "yes", "yeah", "sure", "please" as true; "no", "nope", "don't need" as false
+8. For source_location: only set if needs_flight is true and user mentions where they're flying from
 
 Examples:
 - Existing: {{"city": "Kingston", "country": null}}, New: "Canada" → Result: {{"city": "Kingston", "country": "Canada"}}
 - Existing: {{"city": null, "country": "France"}}, New: "Paris" → Result: {{"city": "Paris", "country": "France"}}
-- Existing: {{"city": "Tokyo", "country": "Japan"}}, New: "anywhere is okay" → Result: {{"location_preference": "flexible"}}, keep city and country
+- Existing: {{"needs_flight": null}}, New: "yes please" (last_question=flight) → Result: {{"needs_flight": true}}
+- Existing: {{"needs_flight": true, "source_location": null}}, New: "Montreal" → Result: {{"source_location": "Montreal"}}
 
 Return the complete updated JSON object with the same structure:"""
 
         try:
             if self.use_groq and self.groq_client:
-                # Groq is sync — run in thread pool to avoid blocking the event loop
                 loop = asyncio.get_running_loop()
                 updated_data = await loop.run_in_executor(
                     None,
@@ -522,21 +462,19 @@ Return the complete updated JSON object with the same structure:"""
                     ),
                 )
             elif self.use_gemini and self.gemini_client:
-                # Gemini API (async)
                 extracted_text = await self.gemini_client.generate_content(
                     prompt=prompt,
                     system_instruction=self.system_instruction,
                     temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
                     max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS,
                 )
-                
-                # Parse JSON from response
+
                 extracted_text = extracted_text.strip()
                 if extracted_text.startswith("```json"):
                     extracted_text = extracted_text.split("```json")[1].split("```")[0].strip()
                 elif extracted_text.startswith("```"):
                     extracted_text = extracted_text.split("```")[1].split("```")[0].strip()
-                
+
                 updated_data = json.loads(extracted_text)
             else:
                 raise ValueError("No LLM client available")
@@ -554,56 +492,43 @@ Return the complete updated JSON object with the same structure:"""
     def _calculate_date_fields(self, preferences: TripPreferences) -> TripPreferences:
         """
         Auto-calculate missing date fields based on provided information.
-
-        Rules:
-        - If start_date + end_date provided → calculate duration_days
-        - If start_date + duration_days provided → calculate end_date
-        - If end_date + duration_days provided → calculate start_date
-
-        Args:
-            preferences: TripPreferences object with some date fields filled
-
-        Returns:
-            Updated TripPreferences with calculated date fields
         """
         from datetime import datetime, timedelta
 
         try:
             # Rule 1: If start_date and end_date provided → calculate duration_days
             if preferences.start_date and preferences.end_date and not preferences.duration_days:
-                # Check if dates are in YYYY-MM-DD format (specific dates, not month/season)
                 if len(preferences.start_date) == 10 and len(preferences.end_date) == 10:
                     try:
                         start = datetime.strptime(preferences.start_date, "%Y-%m-%d")
                         end = datetime.strptime(preferences.end_date, "%Y-%m-%d")
-                        duration = (end - start).days + 1  # +1 to include both start and end days
+                        duration = (end - start).days + 1
                         if duration > 0:
                             preferences.duration_days = duration
                     except ValueError:
-                        pass  # Not valid date format, skip calculation
+                        pass
 
             # Rule 2: If start_date + duration_days provided → calculate end_date
             elif preferences.start_date and preferences.duration_days and not preferences.end_date:
-                if len(preferences.start_date) == 10:  # Specific date format
+                if len(preferences.start_date) == 10:
                     try:
                         start = datetime.strptime(preferences.start_date, "%Y-%m-%d")
-                        end = start + timedelta(days=preferences.duration_days - 1)  # -1 because duration includes start day
+                        end = start + timedelta(days=preferences.duration_days - 1)
                         preferences.end_date = end.strftime("%Y-%m-%d")
                     except ValueError:
                         pass
 
             # Rule 3: If end_date + duration_days provided → calculate start_date
             elif preferences.end_date and preferences.duration_days and not preferences.start_date:
-                if len(preferences.end_date) == 10:  # Specific date format
+                if len(preferences.end_date) == 10:
                     try:
                         end = datetime.strptime(preferences.end_date, "%Y-%m-%d")
-                        start = end - timedelta(days=preferences.duration_days - 1)  # -1 because duration includes end day
+                        start = end - timedelta(days=preferences.duration_days - 1)
                         preferences.start_date = start.strftime("%Y-%m-%d")
                     except ValueError:
                         pass
 
         except Exception as e:
-            # If any calculation fails, just return preferences as-is
             print(f"Warning: Date calculation failed: {e}")
 
         return preferences
@@ -611,12 +536,6 @@ Return the complete updated JSON object with the same structure:"""
     def validate_preferences(self, preferences: TripPreferences) -> Dict[str, Any]:
         """
         Validate extracted preferences and return any warnings or issues.
-
-        Args:
-            preferences: The preferences to validate
-
-        Returns:
-            Dictionary with validation results
         """
         issues = []
         warnings = []
@@ -626,14 +545,9 @@ Return the complete updated JSON object with the same structure:"""
             if preferences.start_date > preferences.end_date:
                 issues.append("Start date is after end date")
 
-        # Check if we have minimal required information
         has_dates = bool(preferences.start_date or preferences.end_date or preferences.duration_days)
-        has_preferences = bool(preferences.interests and len(preferences.interests) > 0)
-
         if not has_dates:
             warnings.append("No date information provided")
-        if not has_preferences:
-            warnings.append("No specific interests mentioned")
 
         return {
             "valid": len(issues) == 0,
@@ -645,23 +559,31 @@ Return the complete updated JSON object with the same structure:"""
     def _calculate_completeness(self, preferences: TripPreferences) -> float:
         """
         Calculate how complete the preferences are (0.0 to 1.0).
-
-        Args:
-            preferences: The preferences to evaluate
-
-        Returns:
-            Completeness score between 0.0 and 1.0
+        Counts: city, country, dates, pace, needs_flight answered, source_location (if needed), needs_airbnb answered.
         """
-        # Required fields — budget, interests, duration_days are optional for MVP
-        required_fields = ['city', 'country', 'start_date', 'end_date', 'pace']
+        score = 0
 
-        filled_count = 0
-        for field in required_fields:
-            value = getattr(preferences, field, None)
-            if value is not None and value != [] and value != '':
-                filled_count += 1
+        if preferences.city:
+            score += 1
+        if preferences.country:
+            score += 1
+        if preferences.start_date or preferences.end_date or preferences.duration_days:
+            score += 1
+        if preferences.pace:
+            score += 1
+        if preferences.needs_flight is not None:
+            score += 1
+        if preferences.needs_airbnb is not None:
+            score += 1
 
-        return filled_count / len(required_fields)
+        # Total depends on whether flight is needed (source_location adds one more)
+        total = 6
+        if preferences.needs_flight:
+            total = 7
+            if preferences.source_location:
+                score += 1
+
+        return min(score / total, 1.0)
 
     def save_preferences_to_file(
         self,
@@ -670,38 +592,26 @@ Return the complete updated JSON object with the same structure:"""
     ) -> Optional[str]:
         """
         Save complete trip preferences to a JSON file.
-
-        Args:
-            preferences: The TripPreferences object to save
-            output_dir: Directory to save the file (relative to backend/)
-
-        Returns:
-            Absolute path to the saved file, or None if save failed
         """
         try:
-            # Create output directory if it doesn't exist
             backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             full_output_dir = os.path.join(backend_dir, output_dir)
             os.makedirs(full_output_dir, exist_ok=True)
 
-            # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             city_name = preferences.city or "unknown_city"
-            # Sanitize city name for filename
             city_name = "".join(c for c in city_name if c.isalnum() or c in (' ', '-', '_')).strip()
             city_name = city_name.replace(' ', '_').lower()
 
             filename = f"trip_{city_name}_{timestamp}.json"
             filepath = os.path.join(full_output_dir, filename)
 
-            # Convert preferences to dict and add metadata
             data = preferences.to_dict()
             data['_metadata'] = {
                 'created_at': datetime.now().isoformat(),
-                'file_version': '1.0'
+                'file_version': '2.0'
             }
 
-            # Write to file with pretty formatting
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
