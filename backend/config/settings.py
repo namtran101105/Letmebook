@@ -111,8 +111,11 @@ class Settings:
         """Validate required configuration. Returns list of errors (empty = valid)."""
         errors = []
 
-        if not cls.GEMINI_KEY:
-            errors.append("GEMINI_KEY is required — set it in backend/.env")
+        if not cls.GEMINI_KEY and not cls.GROQ_API_KEY:
+            errors.append(
+                "At least one of GEMINI_KEY or GROQ_API_KEY is required — "
+                "set it in backend/.env"
+            )
 
         if not 0 <= cls.GEMINI_EXTRACTION_TEMPERATURE <= 2:
             errors.append(

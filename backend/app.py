@@ -47,7 +47,11 @@ from schemas.api_models import (
     HealthResponse,
     ValidationResult,
     FeasibilityResult,
+    ChatRequest,
+    ChatResponse,
+    ChatMessage,
 )
+from services.conversation_service import ConversationService
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +60,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 nlp_service: Optional[NLPExtractionService] = None
 itinerary_service: Optional[ItineraryService] = None
+conversation_service: Optional[ConversationService] = None
 nlp_service_error: Optional[str] = None
 
 
@@ -65,7 +70,7 @@ nlp_service_error: Optional[str] = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Initialise services on startup; clean up on shutdown."""
-    global nlp_service, itinerary_service, nlp_service_error
+    global nlp_service, itinerary_service, conversation_service, nlp_service_error
 
     try:
         nlp_service = NLPExtractionService()
@@ -81,6 +86,12 @@ async def lifespan(_app: FastAPI):
         print("✅ Itinerary Service initialized successfully")
     except Exception as exc:
         print(f"⚠️  Itinerary Service init failed (will still serve NLP): {exc}")
+
+    try:
+        conversation_service = ConversationService()
+        print("✅ Conversation Service initialized successfully")
+    except Exception as exc:
+        print(f"⚠️  Conversation Service init failed: {exc}")
 
     yield  # ── application runs here ──
 
@@ -330,6 +341,55 @@ async def generate_itinerary_endpoint(body: GenerateItineraryRequest):
         )
     except Exception as exc:
         logger.error("Itinerary generation failed", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(exc)},
+        )
+
+
+# ── Conversational chat (Toronto MVP) ─────────────────────────
+
+@app.post("/api/chat", response_model=ChatResponse, tags=["chat"])
+async def chat(body: ChatRequest):
+    """
+    Conversational Toronto trip-planning assistant.
+
+    Send an empty ``messages`` list to receive the greeting.  On subsequent
+    turns, include the full ``messages`` array from the previous response
+    together with the new ``user_input``.
+
+    The service progresses through phases:
+    ``greeting`` → ``intake`` → ``confirmed`` → ``itinerary``.
+    """
+    if not conversation_service:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "Conversation service not initialized. Check GROQ_API_KEY in .env",
+            },
+        )
+
+    try:
+        messages_raw = [m.model_dump() for m in body.messages]
+
+        updated_messages, assistant_text, phase, still_need = (
+            await conversation_service.turn(
+                messages=messages_raw,
+                user_input=body.user_input,
+            )
+        )
+
+        return ChatResponse(
+            success=True,
+            messages=[ChatMessage(**m) for m in updated_messages],
+            assistant_message=assistant_text,
+            phase=phase,
+            still_need=still_need,
+        )
+
+    except Exception as exc:
+        logger.error("Chat turn failed", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": str(exc)},

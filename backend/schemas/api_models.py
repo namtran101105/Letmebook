@@ -123,3 +123,59 @@ class ErrorResponse(BaseModel):
 
     success: bool = False
     error: str
+
+
+# ── Chat Models (conversational Toronto MVP) ─────────────────
+
+
+class ChatMessage(BaseModel):
+    """Single message in the conversation history."""
+
+    role: str = Field(
+        ...,
+        description='Message role: "system", "user", or "assistant"',
+    )
+    content: str = Field(..., description="Message text content")
+
+
+class ChatRequest(BaseModel):
+    """POST /api/chat — send a conversation turn."""
+
+    messages: List[ChatMessage] = Field(
+        default_factory=list,
+        description=(
+            "Full conversation history. Send an empty list to receive the "
+            "greeting message."
+        ),
+    )
+    user_input: Optional[str] = Field(
+        None,
+        min_length=1,
+        description=(
+            "The user's latest message. Omit (or null) on the very first "
+            "request to trigger the greeting."
+        ),
+    )
+
+
+class ChatResponse(BaseModel):
+    """POST /api/chat response."""
+
+    success: bool
+    messages: List[ChatMessage] = Field(
+        description="Updated conversation history (store client-side).",
+    )
+    assistant_message: str = Field(
+        description="The assistant's reply for this turn.",
+    )
+    phase: str = Field(
+        description=(
+            'Current conversation phase: "greeting", "intake", '
+            '"confirmed", or "itinerary".'
+        ),
+    )
+    still_need: Optional[List[str]] = Field(
+        None,
+        description="Fields still missing during intake (null after itinerary).",
+    )
+    error: Optional[str] = None

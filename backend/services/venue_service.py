@@ -2,7 +2,7 @@
 Venue service — queries the Airflow-managed PostgreSQL database for place/venue
 data that was scraped and stored by the website_change_monitor DAG.
 
-The Flask backend reads from the *same* database that Airflow writes to.
+The FastAPI backend reads from the *same* database that Airflow writes to.
 Tables used: places, place_facts (defined in airflow/dags/lib/db.py).
 
 Usage:
@@ -38,6 +38,133 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Toronto fallback venue list — used when the DB is unreachable so the demo
+# always works.  Each dict mirrors the columns returned by get_venues_*.
+# ---------------------------------------------------------------------------
+TORONTO_FALLBACK_VENUES: List[Dict[str, Any]] = [
+    {
+        "place_key": "cn_tower",
+        "name": "CN Tower",
+        "category": "tourism",
+        "address": "290 Bremner Blvd, Toronto, ON M5V 3L9",
+        "description": "Iconic 553-metre communications and observation tower with glass floor and revolving restaurant.",
+        "source_url": "https://www.cntower.ca",
+    },
+    {
+        "place_key": "rom",
+        "name": "Royal Ontario Museum",
+        "category": "museum",
+        "address": "100 Queens Park, Toronto, ON M5S 2C6",
+        "description": "Canada's largest museum of world cultures and natural history.",
+        "source_url": "https://www.rom.on.ca",
+    },
+    {
+        "place_key": "st_lawrence_market",
+        "name": "St. Lawrence Market",
+        "category": "food",
+        "address": "93 Front St E, Toronto, ON M5E 1C3",
+        "description": "Historic public market with over 120 vendors offering fresh produce, specialty foods, and artisan goods.",
+        "source_url": "https://www.stlawrencemarket.com",
+    },
+    {
+        "place_key": "ripley_aquarium",
+        "name": "Ripley's Aquarium of Canada",
+        "category": "entertainment",
+        "address": "288 Bremner Blvd, Toronto, ON M5V 3L9",
+        "description": "Marine aquarium with underwater tunnel, touch tanks, and over 20,000 aquatic animals.",
+        "source_url": "https://www.ripleyaquariums.com/canada",
+    },
+    {
+        "place_key": "high_park",
+        "name": "High Park",
+        "category": "park",
+        "address": "1873 Bloor St W, Toronto, ON M6R 2Z3",
+        "description": "Large urban park with nature trails, a zoo, sports facilities, and beautiful gardens.",
+        "source_url": "https://www.highparktoronto.com",
+    },
+    {
+        "place_key": "distillery_district",
+        "name": "Distillery Historic District",
+        "category": "culture",
+        "address": "55 Mill St, Toronto, ON M5A 3C4",
+        "description": "Pedestrian-only village of Victorian industrial architecture with galleries, boutiques, and restaurants.",
+        "source_url": "https://www.thedistillerydistrict.com",
+    },
+    {
+        "place_key": "kensington_market",
+        "name": "Kensington Market",
+        "category": "food",
+        "address": "Kensington Ave, Toronto, ON M5T 2K2",
+        "description": "Bohemian neighbourhood with vintage shops, diverse food stalls, and vibrant street art.",
+        "source_url": "https://www.kensingtonmarket.ca",
+    },
+    {
+        "place_key": "hockey_hall_of_fame",
+        "name": "Hockey Hall of Fame",
+        "category": "sport",
+        "address": "30 Yonge St, Toronto, ON M5E 1X8",
+        "description": "Museum dedicated to the history of ice hockey with interactive exhibits and the Stanley Cup.",
+        "source_url": "https://www.hhof.com",
+    },
+    {
+        "place_key": "casa_loma",
+        "name": "Casa Loma",
+        "category": "culture",
+        "address": "1 Austin Terrace, Toronto, ON M5R 1X8",
+        "description": "Gothic Revival castle with decorated suites, towers, gardens, and an 800-foot underground tunnel.",
+        "source_url": "https://casaloma.ca",
+    },
+    {
+        "place_key": "ago",
+        "name": "Art Gallery of Ontario",
+        "category": "museum",
+        "address": "317 Dundas St W, Toronto, ON M5T 1G4",
+        "description": "One of the largest art museums in North America with a collection spanning from the first century to the present.",
+        "source_url": "https://ago.ca",
+    },
+    {
+        "place_key": "toronto_islands",
+        "name": "Toronto Islands",
+        "category": "park",
+        "address": "Toronto Islands, Toronto, ON",
+        "description": "Chain of small islands offering beaches, picnic areas, bike rentals, and skyline views.",
+        "source_url": "https://www.toronto.ca/explore-enjoy/parks-gardens-beaches/toronto-islands",
+    },
+    {
+        "place_key": "harbourfront_centre",
+        "name": "Harbourfront Centre",
+        "category": "entertainment",
+        "address": "235 Queens Quay W, Toronto, ON M5J 2G8",
+        "description": "Cultural centre on the waterfront with year-round festivals, art exhibitions, and performances.",
+        "source_url": "https://www.harbourfrontcentre.com",
+    },
+    {
+        "place_key": "bata_shoe_museum",
+        "name": "Bata Shoe Museum",
+        "category": "museum",
+        "address": "327 Bloor St W, Toronto, ON M5S 1W7",
+        "description": "Unique museum housing a collection of over 13,000 shoes spanning 4,500 years of history.",
+        "source_url": "https://www.batashoemuseum.ca",
+    },
+    {
+        "place_key": "toronto_zoo",
+        "name": "Toronto Zoo",
+        "category": "entertainment",
+        "address": "2000 Meadowvale Rd, Toronto, ON M1B 5K7",
+        "description": "Large zoo with over 5,000 animals representing 450+ species across themed geographic regions.",
+        "source_url": "https://www.torontozoo.com",
+    },
+    {
+        "place_key": "aga_khan_museum",
+        "name": "Aga Khan Museum",
+        "category": "museum",
+        "address": "77 Wynford Dr, Toronto, ON M3C 1K1",
+        "description": "Museum showcasing Islamic art and Muslim civilisations with concerts, films, and lectures.",
+        "source_url": "https://www.agakhanmuseum.org",
+    },
+]
+
+# ---------------------------------------------------------------------------
 # Interest category → place category mapping
 # ---------------------------------------------------------------------------
 # The NLP extractor outputs canonical interest names.  The Airflow DB stores
@@ -58,8 +185,15 @@ class VenueService:
 
     def __init__(self, db_url: Optional[str] = None):
         url = db_url or settings.APP_DB_URL
-        self._engine = create_engine(url, pool_pre_ping=True, pool_size=3)
-        self._Session = sessionmaker(bind=self._engine)
+        try:
+            self._engine = create_engine(url, pool_pre_ping=True, pool_size=3)
+            self._Session = sessionmaker(bind=self._engine)
+            self._db_available = True
+        except Exception:
+            logger.warning("Could not create DB engine — will use fallback venues")
+            self._db_available = False
+            self._engine = None
+            self._Session = None
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -75,7 +209,7 @@ class VenueService:
         """
         Return venue rows from the Airflow DB that match the traveller's
         city and interests.  Results are meant to be injected into the
-        Gemini itinerary-generation prompt so the AI uses *real* venues.
+        itinerary-generation prompt so the AI uses *real* venues.
 
         Args:
             city: Target city (e.g. "Toronto").
@@ -87,6 +221,9 @@ class VenueService:
             List of dicts with keys: place_id, name, category, address,
             phone, hours, description, source_url.
         """
+        if not self._db_available:
+            return []
+
         db_cats = self._expand_interests(interests)
 
         session = self._Session()
@@ -96,6 +233,7 @@ class VenueService:
             query = text("""
                 SELECT
                     id        AS place_id,
+                    place_key,
                     name,
                     category,
                     address,
@@ -132,11 +270,15 @@ class VenueService:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """Return all active venues for a city regardless of category."""
+        if not self._db_available:
+            return []
+
         session = self._Session()
         try:
             query = text("""
                 SELECT
                     id        AS place_id,
+                    place_key,
                     name,
                     category,
                     address,
@@ -159,6 +301,19 @@ class VenueService:
             return []
         finally:
             session.close()
+
+    def get_toronto_venues(self) -> List[Dict[str, Any]]:
+        """
+        Return Toronto venue list for the conversational chat flow.
+
+        Tries the DB first; falls back to ``TORONTO_FALLBACK_VENUES`` if the
+        DB is unreachable or returns no rows.
+        """
+        venues = self.get_all_venues_for_city("Toronto")
+        if venues:
+            return venues
+        logger.info("Using Toronto fallback venue list (DB empty or unreachable)")
+        return list(TORONTO_FALLBACK_VENUES)  # return a copy
 
     # ------------------------------------------------------------------
     # Internal
@@ -196,6 +351,31 @@ class VenueService:
             line = f"- **{name}** [{cat}] — {addr}"
             if hours:
                 line += f" | Hours: {hours}"
+            if desc:
+                line += f" | {desc}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_venues_for_chat(venues: List[Dict[str, Any]]) -> str:
+        """
+        Format venues with ``place_key`` and ``source_url`` so the LLM can
+        produce ``Source: {venue_id}, {url}`` citations in the itinerary.
+        """
+        if not venues:
+            return "(No venues available.)"
+
+        lines: List[str] = []
+        for v in venues:
+            vid = v.get("place_key") or v.get("place_id") or "unknown"
+            name = v.get("name") or v.get("canonical_name") or "Unknown"
+            cat = v.get("category") or ""
+            addr = v.get("address") or ""
+            url = v.get("source_url") or ""
+            desc = (v.get("description") or "")[:200]
+            line = f"[venue_id: {vid}] {name} [{cat}] — {addr}"
+            if url:
+                line += f" | URL: {url}"
             if desc:
                 line += f" | {desc}"
             lines.append(line)

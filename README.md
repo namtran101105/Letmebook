@@ -30,7 +30,7 @@ cp backend/.env.example backend/.env
 # Edit backend/.env and add your GEMINI_KEY
 
 # 5. Start the server
-python backend/app.py
+python3 backend/app.py
 ```
 
 Open http://localhost:8000 for the chat UI, or http://localhost:8000/docs for the API reference.

@@ -2,7 +2,7 @@
 Client for Groq API using OpenAI-compatible interface.
 """
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from groq import Groq
 from config.settings import settings
 
@@ -140,3 +140,36 @@ class GroqClient:
 
         except Exception as e:
             raise Exception(f"Groq API request failed: {str(e)}")
+
+    def chat_with_history(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> str:
+        """
+        Send a full conversation history to Groq and return the assistant reply.
+
+        Unlike ``generate_content`` (which accepts a single prompt string),
+        this method takes the raw ``messages`` list so multi-turn context is
+        preserved across calls.
+
+        Args:
+            messages: Ordered list of ``{"role": ..., "content": ...}`` dicts
+                      (system / user / assistant).
+            temperature: Controls randomness (0.0-2.0).
+            max_tokens: Maximum tokens in the response.
+
+        Returns:
+            The assistant's reply as a plain string.
+        """
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            raise Exception(f"Groq API chat request failed: {str(e)}")

@@ -7,15 +7,108 @@ from sqlalchemy import text
 from lib.db import get_engine, init_db
 
 PLACES = [
+    # --- Kingston / Brockville ---
     {
         "place_key": "visit_1000_islands",
         "canonical_name": "Visit 1000 Islands",
         "city": "Kingston/Brockville",
         "category": "tourism",
-    }
+    },
+    # --- Toronto ---
+    {
+        "place_key": "cn_tower",
+        "canonical_name": "CN Tower",
+        "city": "Toronto",
+        "category": "tourism",
+    },
+    {
+        "place_key": "rom",
+        "canonical_name": "Royal Ontario Museum",
+        "city": "Toronto",
+        "category": "museum",
+    },
+    {
+        "place_key": "st_lawrence_market",
+        "canonical_name": "St. Lawrence Market",
+        "city": "Toronto",
+        "category": "food",
+    },
+    {
+        "place_key": "ripley_aquarium",
+        "canonical_name": "Ripley's Aquarium of Canada",
+        "city": "Toronto",
+        "category": "entertainment",
+    },
+    {
+        "place_key": "high_park",
+        "canonical_name": "High Park",
+        "city": "Toronto",
+        "category": "park",
+    },
+    {
+        "place_key": "distillery_district",
+        "canonical_name": "Distillery Historic District",
+        "city": "Toronto",
+        "category": "culture",
+    },
+    {
+        "place_key": "kensington_market",
+        "canonical_name": "Kensington Market",
+        "city": "Toronto",
+        "category": "food",
+    },
+    {
+        "place_key": "hockey_hall_of_fame",
+        "canonical_name": "Hockey Hall of Fame",
+        "city": "Toronto",
+        "category": "sport",
+    },
+    {
+        "place_key": "casa_loma",
+        "canonical_name": "Casa Loma",
+        "city": "Toronto",
+        "category": "culture",
+    },
+    {
+        "place_key": "ago",
+        "canonical_name": "Art Gallery of Ontario",
+        "city": "Toronto",
+        "category": "museum",
+    },
+    {
+        "place_key": "toronto_islands",
+        "canonical_name": "Toronto Islands",
+        "city": "Toronto",
+        "category": "park",
+    },
+    {
+        "place_key": "harbourfront_centre",
+        "canonical_name": "Harbourfront Centre",
+        "city": "Toronto",
+        "category": "entertainment",
+    },
+    {
+        "place_key": "bata_shoe_museum",
+        "canonical_name": "Bata Shoe Museum",
+        "city": "Toronto",
+        "category": "museum",
+    },
+    {
+        "place_key": "toronto_zoo",
+        "canonical_name": "Toronto Zoo",
+        "city": "Toronto",
+        "category": "entertainment",
+    },
+    {
+        "place_key": "aga_khan_museum",
+        "canonical_name": "Aga Khan Museum",
+        "city": "Toronto",
+        "category": "museum",
+    },
 ]
 
 PAGES = [
+    # --- Kingston / Brockville ---
     {
         "place_key": "visit_1000_islands",
         "url": "https://visit1000islands.com/",
@@ -23,7 +116,23 @@ PAGES = [
         "extract_strategy": "jsonld",
         "css_rules": None,
         "enabled": True,
-    }
+    },
+    # --- Toronto ---
+    {"place_key": "cn_tower", "url": "https://www.cntower.ca", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "rom", "url": "https://www.rom.on.ca", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "st_lawrence_market", "url": "https://www.stlawrencemarket.com", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "ripley_aquarium", "url": "https://www.ripleyaquariums.com/canada", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "high_park", "url": "https://www.highparktoronto.com", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "distillery_district", "url": "https://www.thedistillerydistrict.com", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "kensington_market", "url": "https://www.kensingtonmarket.ca", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "hockey_hall_of_fame", "url": "https://www.hhof.com", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "casa_loma", "url": "https://casaloma.ca", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "ago", "url": "https://ago.ca", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "toronto_islands", "url": "https://www.toronto.ca/explore-enjoy/parks-gardens-beaches/toronto-islands", "page_type": "overview", "extract_strategy": "text", "css_rules": None, "enabled": True},
+    {"place_key": "harbourfront_centre", "url": "https://www.harbourfrontcentre.com", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "bata_shoe_museum", "url": "https://www.batashoemuseum.ca", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "toronto_zoo", "url": "https://www.torontozoo.com", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
+    {"place_key": "aga_khan_museum", "url": "https://www.agakhanmuseum.org", "page_type": "overview", "extract_strategy": "jsonld", "css_rules": None, "enabled": True},
 ]
 
 
