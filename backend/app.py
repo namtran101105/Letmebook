@@ -1,20 +1,39 @@
 """
-Flask application for Kingston Trip Planner.
+FastAPI application for Kingston Trip Planner.
 Simple API for testing NLP extraction.
 """
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 import sys
 import os
+import uvicorn
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
 from services.nlp_extraction_service import NLPExtractionService
+from models.trip_preferences import TripPreferences
 from config.settings import settings
 
-app = Flask(__name__, static_folder='../frontend', static_url_path='')
-CORS(app)
+# Initialize FastAPI app
+app = FastAPI(
+    title="Kingston Trip Planner",
+    description="API for travel planning with NLP extraction",
+    version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 # Initialize service
 nlp_service = None
@@ -30,26 +49,56 @@ except Exception as e:
     traceback.print_exc()
 
 
-@app.route('/')
-def index():
+# Pydantic models for request/response validation
+class ExtractRequest(BaseModel):
+    user_input: str
+
+
+class RefineRequest(BaseModel):
+    preferences: Dict[str, Any]
+    additional_input: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    model: str
+    nlp_service_ready: bool
+    error: Optional[str] = None
+
+
+class TripResponse(BaseModel):
+    success: bool
+    preferences: Optional[Dict[str, Any]] = None
+    validation: Optional[Dict[str, Any]] = None
+    bot_message: Optional[str] = None
+    saved_to_file: Optional[str] = None
+    error: Optional[str] = None
+
+
+@app.get('/')
+async def index():
     """Serve the frontend HTML page."""
-    return send_from_directory('../frontend', 'index.html')
+    frontend_path = os.path.join(os.path.dirname(__file__), '../frontend/index.html')
+    if os.path.exists(frontend_path):
+        return FileResponse(frontend_path)
+    raise HTTPException(status_code=404, detail="Frontend not found")
 
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
+@app.get('/api/health', response_model=HealthResponse)
+async def health_check():
     """Health check endpoint."""
-    return jsonify({
+    return {
         'status': 'healthy',
         'service': 'Kingston Trip Planner',
         'model': settings.GROQ_MODEL,
         'nlp_service_ready': nlp_service is not None,
         'error': nlp_service_error if nlp_service_error else None
-    })
+    }
 
 
-@app.route('/api/extract', methods=['POST'])
-def extract_preferences():
+@app.post('/api/extract', response_model=TripResponse)
+async def extract_preferences(request: ExtractRequest):
     """
     Extract trip preferences from user input.
 
@@ -67,21 +116,16 @@ def extract_preferences():
     }
     """
     if not nlp_service:
-        return jsonify({
-            'success': False,
-            'error': 'NLP service not initialized. Check your GROQ_API_KEY in .env file'
-        }), 500
+        raise HTTPException(
+            status_code=500,
+            detail='NLP service not initialized. Check your GROQ_API_KEY in .env file'
+        )
 
     try:
-        # Get user input from request
-        data = request.get_json()
-        user_input = data.get('user_input', '').strip()
+        user_input = request.user_input.strip()
 
         if not user_input:
-            return jsonify({
-                'success': False,
-                'error': 'user_input is required'
-            }), 400
+            raise HTTPException(status_code=400, detail='user_input is required')
 
         # Extract preferences
         preferences = nlp_service.extract_preferences(user_input)
@@ -114,17 +158,18 @@ def extract_preferences():
         if saved_file_path:
             response_data['saved_to_file'] = saved_file_path
 
-        return jsonify(response_data)
+        return response_data
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/refine', methods=['POST'])
-def refine_preferences():
+@app.post('/api/refine', response_model=TripResponse)
+async def refine_preferences(request: RefineRequest):
     """
     Refine existing preferences with additional input.
 
@@ -135,24 +180,19 @@ def refine_preferences():
     }
     """
     if not nlp_service:
-        return jsonify({
-            'success': False,
-            'error': 'NLP service not initialized'
-        }), 500
+        raise HTTPException(status_code=500, detail='NLP service not initialized')
 
     try:
-        data = request.get_json()
-        preferences_dict = data.get('preferences')
-        additional_input = data.get('additional_input', '').strip()
+        preferences_dict = request.preferences
+        additional_input = request.additional_input.strip()
 
         if not preferences_dict or not additional_input:
-            return jsonify({
-                'success': False,
-                'error': 'preferences and additional_input are required'
-            }), 400
+            raise HTTPException(
+                status_code=400,
+                detail='preferences and additional_input are required'
+            )
 
         # Convert dict to TripPreferences object
-        from models.trip_preferences import TripPreferences
         existing_preferences = TripPreferences.from_dict(preferences_dict)
 
         # Refine preferences
@@ -186,13 +226,14 @@ def refine_preferences():
         if saved_file_path:
             response_data['saved_to_file'] = saved_file_path
 
-        return jsonify(response_data)
+        return response_data
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == '__main__':
@@ -210,8 +251,9 @@ if __name__ == '__main__':
         print("3. Run the server again")
         sys.exit(1)
 
-    app.run(
+    uvicorn.run(
+        app,
         host=settings.HOST,
         port=settings.PORT,
-        debug=settings.DEBUG
+        log_level="info"
     )
