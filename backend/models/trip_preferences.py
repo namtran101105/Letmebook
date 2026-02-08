@@ -35,6 +35,10 @@ class TripPreferences:
     # Drop off or location of stay
     location_preference: Optional[str] = None  # e.g., "downtown", "near nature", "historic district"
 
+    # Booking preferences
+    booking_type: Optional[str] = None  # "accommodation", "transportation", "both", or "none" (user doesn't want to book)
+    source_location: Optional[str] = None  # Where user is traveling from (only needed if booking_type includes transportation)
+
     # # Group information
     # group_size: Optional[int] = None
     # traveling_with: Optional[str] = None  # e.g., "family", "friends", "solo"

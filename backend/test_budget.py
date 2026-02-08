@@ -1,4 +1,4 @@
-"""Quick test for the weather service using trip preferences."""
+"""Quick test for the budget estimator using trip preferences."""
 
 import sys
 import os
@@ -7,7 +7,7 @@ from glob import glob
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from services.weather_service import WeatherService
+from services.trip_budget_service import TripBudgetService
 from models.trip_preferences import TripPreferences
 
 
@@ -41,7 +41,7 @@ def load_latest_trip_preferences() -> TripPreferences:
 
 def main():
     print("=" * 80)
-    print("WEATHER SERVICE - Testing with Real Trip Preferences")
+    print("BUDGET ESTIMATOR - Testing with Real Trip Preferences")
     print("=" * 80)
     
     # Load preferences
@@ -60,26 +60,29 @@ def main():
     print(f"  Budget: ${preferences.budget} {preferences.budget_currency}")
     print(f"  Interests: {', '.join(preferences.interests) if preferences.interests else 'None'}")
     print(f"  Pace: {preferences.pace}")
+    print(f"  Booking Type: {preferences.booking_type}")
+    if preferences.source_location:
+        print(f"  Traveling From: {preferences.source_location}")
     print()
     
-    # Initialize weather service
-    service = WeatherService()
+    # Initialize budget service
+    service = TripBudgetService()
     
-    # Get weather forecast
-    result = service.get_trip_weather(preferences)
+    # Estimate budget
+    result = service.estimate_trip_budget(preferences)
     
     # Display results
-    print("\n" + service.get_weather_summary(result))
+    print("\n" + service.get_budget_summary(result))
     
-    # Display quick summary
+    # Display quick status
     if not result.get("error"):
-        print("\n📊 Weather Overview:")
+        print("\n📊 Budget Overview:")
         print("-" * 80)
-        print(service.get_weather_conditions_summary(result))
+        print(service.get_budget_status_summary(result))
         print()
     
     print("\n" + "=" * 80)
-    print("✅ Weather forecast completed!")
+    print("✅ Budget estimation completed!")
     print("=" * 80)
 
 

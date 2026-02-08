@@ -527,6 +527,19 @@
                     ${createItem('Interests', prefs.interests?.length ? prefs.interests.join(', ') : 'None specified')}
                     ${prefs.pace ? createItem('Travel Pace', prefs.pace) : ''}
                 </div>
+
+                <!-- Booking Preferences Card -->
+                ${prefs.booking_type && prefs.booking_type !== 'none' ? `
+                <div class="preference-card">
+                    <h3>🎫 Booking Preferences</h3>
+                    ${createItem('Booking Type', 
+                        prefs.booking_type === 'accommodation' ? 'Accommodation only (Airbnb)' :
+                        prefs.booking_type === 'transportation' ? 'Transportation only (Flight/Bus)' :
+                        prefs.booking_type === 'both' ? 'Both Accommodation & Transportation' :
+                        prefs.booking_type
+                    )}
+                </div>
+                ` : ''}
             `;
         }
 
