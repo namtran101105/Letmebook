@@ -1,9 +1,7 @@
 # Web Framework
-flask==3.0.0
-flask-cors==4.0.0
-
-# HTTP Requests
-requests==2.31.0
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
 
 # Groq API (updated to fix httpx compatibility)
 groq>=0.13.0
@@ -22,6 +20,3 @@ pytest-cov==4.1.0
 # Code Quality (optional)
 black==23.12.1
 flake8==7.0.0
-
-# LLM - Supporting both Gemini and Groq
-google-genai==1.62.0
