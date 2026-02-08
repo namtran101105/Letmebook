@@ -1,231 +1,365 @@
 """
-Flask application for Kingston Trip Planner.
-Simple API for testing NLP extraction.
-"""
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-import sys
-import os
+MonVoyage Trip Planner — FastAPI application.
 
-# Add current directory to path for imports
+Orchestrates NLP extraction, itinerary generation, and venue data from
+the Airflow-managed database.  Serves the frontend at ``/`` and exposes
+a REST API under ``/api/*``.
+
+Run:
+    python backend/app.py          # starts uvicorn with reload
+    uvicorn app:app --reload       # (from the backend/ directory)
+
+Auto-generated API docs:
+    http://localhost:8000/docs      (Swagger UI)
+    http://localhost:8000/redoc     (ReDoc)
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+from contextlib import asynccontextmanager
+from typing import Optional
+
+# ---------------------------------------------------------------------------
+# Path setup — allow short imports like ``from config.settings import …``
+# ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.dirname(__file__))
 
-from services.nlp_extraction_service import NLPExtractionService
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+
 from config.settings import settings
+from services.nlp_extraction_service import NLPExtractionService
+from services.itinerary_service import ItineraryService, ItineraryGenerationError
+from clients.gemini_client import ExternalAPIError
+from models.trip_preferences import TripPreferences
+from utils.id_generator import generate_trip_id
+from schemas.api_models import (
+    ExtractRequest,
+    ExtractResponse,
+    RefineRequest,
+    RefineResponse,
+    GenerateItineraryRequest,
+    GenerateItineraryResponse,
+    HealthResponse,
+    ValidationResult,
+    FeasibilityResult,
+)
 
-app = Flask(__name__, static_folder='../frontend', static_url_path='')
-CORS(app)
+logger = logging.getLogger(__name__)
 
-# Initialize service
-nlp_service = None
-nlp_service_error = None
-
-try:
-    nlp_service = NLPExtractionService()
-    print("✅ NLP Extraction Service initialized successfully")
-except Exception as e:
-    nlp_service_error = str(e)
-    print(f"❌ Failed to initialize NLP service: {e}")
-    import traceback
-    traceback.print_exc()
+# ---------------------------------------------------------------------------
+# Module-level service instances (set during lifespan startup)
+# ---------------------------------------------------------------------------
+nlp_service: Optional[NLPExtractionService] = None
+itinerary_service: Optional[ItineraryService] = None
+nlp_service_error: Optional[str] = None
 
 
-@app.route('/')
-def index():
+# ---------------------------------------------------------------------------
+# Lifespan — initialise / tear down services
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Initialise services on startup; clean up on shutdown."""
+    global nlp_service, itinerary_service, nlp_service_error
+
+    try:
+        nlp_service = NLPExtractionService()
+        print("✅ NLP Extraction Service initialized successfully")
+    except Exception as exc:
+        nlp_service_error = str(exc)
+        print(f"❌ Failed to initialize NLP service: {exc}")
+        import traceback
+        traceback.print_exc()
+
+    try:
+        itinerary_service = ItineraryService()
+        print("✅ Itinerary Service initialized successfully")
+    except Exception as exc:
+        print(f"⚠️  Itinerary Service init failed (will still serve NLP): {exc}")
+
+    yield  # ── application runs here ──
+
+    logger.info("Shutting down MonVoyage")
+
+
+# ---------------------------------------------------------------------------
+# App creation
+# ---------------------------------------------------------------------------
+app = FastAPI(
+    title="MonVoyage Trip Planner",
+    version="0.2.0",
+    description="AI-powered itinerary engine for any city worldwide.",
+    lifespan=lifespan,
+)
+
+# CORS — allow all origins (matches previous Flask-CORS default)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Global exception handlers
+# ---------------------------------------------------------------------------
+@app.exception_handler(ItineraryGenerationError)
+async def _itinerary_error(request: Request, exc: ItineraryGenerationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "error": exc.reason,
+            "constraints": exc.constraints,
+        },
+    )
+
+
+@app.exception_handler(ExternalAPIError)
+async def _external_api_error(request: Request, exc: ExternalAPIError):
+    return JSONResponse(
+        status_code=502,
+        content={
+            "success": False,
+            "error": f"{exc.service} API failed: {exc.error}",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+# ── Frontend ────────────────────────────────────────────────────
+
+@app.get("/", include_in_schema=False)
+async def index():
     """Serve the frontend HTML page."""
-    return send_from_directory('../frontend', 'index.html')
+    frontend_path = os.path.join(
+        os.path.dirname(__file__), "..", "frontend", "index.html",
+    )
+    return FileResponse(frontend_path)
 
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint."""
-    # Determine which model is being used
+# ── Health check ────────────────────────────────────────────────
+
+@app.get("/api/health", response_model=HealthResponse, tags=["system"])
+async def health_check():
+    """Return service health and active LLM information."""
     if nlp_service:
         if nlp_service.use_gemini:
             model_info = f"Gemini ({settings.GEMINI_MODEL})"
+            primary = "gemini"
         else:
             model_info = f"Groq ({settings.GROQ_MODEL})"
+            primary = "groq"
     else:
         model_info = "Not initialized"
+        primary = "none"
 
-    return jsonify({
-        'status': 'healthy',
-        'service': 'Kingston Trip Planner',
-        'primary_llm': 'gemini' if (nlp_service and nlp_service.use_gemini) else 'groq',
-        'model': model_info,
-        'nlp_service_ready': nlp_service is not None,
-        'error': nlp_service_error if nlp_service_error else None
-    })
+    return HealthResponse(
+        status="healthy",
+        service="MonVoyage Trip Planner",
+        primary_llm=primary,
+        model=model_info,
+        nlp_service_ready=nlp_service is not None,
+        error=nlp_service_error,
+    )
 
 
-@app.route('/api/extract', methods=['POST'])
-def extract_preferences():
+# ── Extract preferences ────────────────────────────────────────
+
+@app.post("/api/extract", response_model=ExtractResponse, tags=["preferences"])
+async def extract_preferences(body: ExtractRequest):
     """
-    Extract trip preferences from user input.
+    Extract structured trip preferences from a natural-language message.
 
-    Request body:
-    {
-        "user_input": "I want to visit Kingston next weekend with my family..."
-    }
-
-    Response:
-    {
-        "success": true,
-        "trip_id": "trip_123...",
-        "preferences": {...},
-        "validation": {...}
-    }
+    The NLP service parses the user's input and returns a structured
+    ``TripPreferences`` dict together with validation results and a
+    conversational bot reply.
     """
     if not nlp_service:
-        return jsonify({
-            'success': False,
-            'error': 'NLP service not initialized. Check your GROQ_API_KEY in .env file'
-        }), 500
-
-    try:
-        # Get user input from request
-        data = request.get_json()
-        user_input = data.get('user_input', '').strip()
-
-        if not user_input:
-            return jsonify({
-                'success': False,
-                'error': 'user_input is required'
-            }), 400
-
-        # Extract preferences
-        preferences = nlp_service.extract_preferences(user_input)
-
-        # Validate preferences
-        validation = nlp_service.validate_preferences(preferences)
-
-        # Generate conversational response
-        bot_message, all_questions_asked = nlp_service.generate_conversational_response(
-            user_input=user_input,
-            preferences=preferences,
-            validation=validation,
-            is_refinement=False
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "NLP service not initialized. Check your API keys in .env file",
+            },
         )
 
-        # If all questions have been asked, save to JSON file
+    try:
+        # Extract → validate → generate conversational response
+        preferences = await nlp_service.extract_preferences(body.user_input)
+        validation = nlp_service.validate_preferences(preferences)
+        bot_message, all_questions_asked = await nlp_service.generate_conversational_response(
+            user_input=body.user_input,
+            preferences=preferences,
+            validation=validation,
+            is_refinement=False,
+        )
+
+        # Persist to file when all required questions have been answered
         saved_file_path = None
         if all_questions_asked:
             saved_file_path = nlp_service.save_preferences_to_file(preferences)
 
-        # Return results
-        response_data = {
-            'success': True,
-            'preferences': preferences.to_dict(),
-            'validation': validation,
-            'bot_message': bot_message
-        }
-
-        # Include file path if saved
-        if saved_file_path:
-            response_data['saved_to_file'] = saved_file_path
-
-        return jsonify(response_data)
-
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/refine', methods=['POST'])
-def refine_preferences():
-    """
-    Refine existing preferences with additional input.
-
-    Request body:
-    {
-        "preferences": {...},  # Previous preferences as dict
-        "additional_input": "I'm vegetarian and want to see Fort Henry"
-    }
-    """
-    if not nlp_service:
-        return jsonify({
-            'success': False,
-            'error': 'NLP service not initialized'
-        }), 500
-
-    try:
-        data = request.get_json()
-        preferences_dict = data.get('preferences')
-        additional_input = data.get('additional_input', '').strip()
-
-        if not preferences_dict or not additional_input:
-            return jsonify({
-                'success': False,
-                'error': 'preferences and additional_input are required'
-            }), 400
-
-        # Convert dict to TripPreferences object
-        from models.trip_preferences import TripPreferences
-        existing_preferences = TripPreferences.from_dict(preferences_dict)
-
-        # Refine preferences
-        refined = nlp_service.refine_preferences(existing_preferences, additional_input)
-
-        # Validate
-        validation = nlp_service.validate_preferences(refined)
-
-        # Generate conversational response for refinement
-        bot_message, all_questions_asked = nlp_service.generate_conversational_response(
-            user_input=additional_input,
-            preferences=refined,
-            validation=validation,
-            is_refinement=True
+        return ExtractResponse(
+            success=True,
+            preferences=preferences.to_dict(),
+            validation=ValidationResult(**validation),
+            bot_message=bot_message,
+            saved_to_file=saved_file_path,
         )
 
-        # If all questions have been asked, save to JSON file
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(exc)},
+        )
+
+
+# ── Refine preferences ─────────────────────────────────────────
+
+@app.post("/api/refine", response_model=RefineResponse, tags=["preferences"])
+async def refine_preferences(body: RefineRequest):
+    """
+    Refine previously extracted preferences with follow-up user input.
+
+    Accepts the prior ``preferences`` dict and an ``additional_input``
+    string, merges the new information, and returns the updated result.
+    """
+    if not nlp_service:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": "NLP service not initialized"},
+        )
+
+    try:
+        existing = TripPreferences.from_dict(body.preferences)
+        refined = await nlp_service.refine_preferences(existing, body.additional_input)
+        validation = nlp_service.validate_preferences(refined)
+        bot_message, all_questions_asked = await nlp_service.generate_conversational_response(
+            user_input=body.additional_input,
+            preferences=refined,
+            validation=validation,
+            is_refinement=True,
+        )
+
         saved_file_path = None
         if all_questions_asked:
             saved_file_path = nlp_service.save_preferences_to_file(refined)
 
-        # Return results
-        response_data = {
-            'success': True,
-            'preferences': refined.to_dict(),
-            'validation': validation,
-            'bot_message': bot_message
-        }
+        return RefineResponse(
+            success=True,
+            preferences=refined.to_dict(),
+            validation=ValidationResult(**validation),
+            bot_message=bot_message,
+            saved_to_file=saved_file_path,
+        )
 
-        # Include file path if saved
-        if saved_file_path:
-            response_data['saved_to_file'] = saved_file_path
-
-        return jsonify(response_data)
-
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(exc)},
+        )
 
 
-if __name__ == '__main__':
-    # Validate settings
+# ── Generate itinerary ─────────────────────────────────────────
+
+@app.post(
+    "/api/generate-itinerary",
+    response_model=GenerateItineraryResponse,
+    tags=["itinerary"],
+)
+async def generate_itinerary_endpoint(body: GenerateItineraryRequest):
+    """
+    Generate a day-by-day itinerary from complete trip preferences.
+
+    Requires all 10 mandatory preference fields.  The service queries
+    the Airflow venue database for real venue data (when available) and
+    calls the Gemini API to produce a feasible timetable.
+    """
+    if not itinerary_service:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "Itinerary service not initialized",
+            },
+        )
+
     try:
-        settings.validate()
-        print(f"✅ Settings validated")
-        if nlp_service:
-            if nlp_service.use_gemini:
-                print(f"📍 Using Gemini API (Primary): {settings.GEMINI_MODEL}")
-            else:
-                print(f"📍 Using Groq API (Fallback): {settings.GROQ_MODEL}")
-        print(f"🌐 Starting server on http://{settings.HOST}:{settings.PORT}")
-    except ValueError as e:
-        print(f"❌ Configuration error: {e}")
+        request_id = generate_trip_id()
+        itinerary = await itinerary_service.generate_itinerary(
+            preferences=body.preferences,
+            request_id=request_id,
+        )
+
+        # Re-run feasibility for the response envelope (cheap, no I/O)
+        feasibility = itinerary_service._validate_feasibility(
+            itinerary, body.preferences, request_id,
+        )
+
+        return GenerateItineraryResponse(
+            success=True,
+            itinerary=itinerary.to_dict(),
+            feasibility=FeasibilityResult(**feasibility),
+        )
+
+    except ValueError as exc:
+        # Validation errors (missing fields, budget too low, etc.)
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": str(exc)},
+        )
+    except ItineraryGenerationError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "error": exc.reason,
+                "feasibility": exc.constraints,
+            },
+        )
+    except Exception as exc:
+        logger.error("Itinerary generation failed", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(exc)},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Startup
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import uvicorn
+
+    errors = settings.validate()
+    if errors:
+        for err in errors:
+            print(f"❌ Configuration error: {err}")
         print("\n📝 Setup Instructions:")
         print("1. Copy backend/.env.example to backend/.env")
-        print("2. Add your Groq API key from https://console.groq.com/keys")
-        print("3. Run the server again")
+        print("2. Add your Gemini API key from https://aistudio.google.com/apikey")
+        print("3. (Optional) Add your Groq API key from https://console.groq.com/keys")
+        print("4. Run the server again")
         sys.exit(1)
 
-    app.run(
+    print(f"✅ Settings validated")
+    print(f"🌐 Starting server on http://{settings.HOST}:{settings.PORT}")
+    print(f"📖 API docs at http://{settings.HOST}:{settings.PORT}/docs")
+
+    uvicorn.run(
+        "app:app",
         host=settings.HOST,
         port=settings.PORT,
-        debug=settings.DEBUG
+        reload=settings.DEBUG,
     )

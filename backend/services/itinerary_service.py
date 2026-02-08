@@ -33,6 +33,7 @@ from models.itinerary import (
     TravelSegment,
 )
 from config.settings import settings
+from services.venue_service import VenueService
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 GEMINI_ITINERARY_SYSTEM_INSTRUCTION = """\
-You are an expert Kingston, Ontario trip planner that generates precise,
-feasible day-by-day itinerary timetables.
+You are an expert travel planner that generates precise, feasible
+day-by-day itinerary timetables for ANY city worldwide.
 
 ## Your Objectives
 1. Create a coherent daily schedule that aligns with the traveller's
@@ -50,6 +51,9 @@ feasible day-by-day itinerary timetables.
 2. Ensure practical geography — activities should follow efficient routing
    from the starting area, minimising backtracking.
 3. Include realistic time slots with no overlapping events.
+4. When a list of AVAILABLE VENUES from the database is provided, you
+   MUST prefer those venues over invented ones. Only add venues not on
+   the list when no suitable match exists for an interest category.
 
 ## Hard Constraints (MUST follow)
 - Every activity must have explicit start and end times (HH:MM, 24-hour).
@@ -103,7 +107,8 @@ The schema is:
             "category": "<interest_category>",
             "cost": <number>,
             "duration_reason": "<why this duration for this pace>",
-            "notes": "<brief description>"
+            "notes": "<brief description>",
+            "from_database": <boolean>
           }
         ],
         "meals": [
@@ -123,92 +128,6 @@ The schema is:
         },
         "daily_budget_allocated": <number>,
         "daily_budget_spent": <number>
-      }
-    ]
-  }
-}
-
-## Example (minimal, 1-day moderate pace)
-Input: Kingston, 2026-05-10, 1 day, $357/day budget, interests: museums, food
-Output:
-{
-  "itinerary": {
-    "option_name": "Moderate-Paced Kingston Explorer",
-    "total_cost": 195.0,
-    "activities_per_day_avg": 4,
-    "total_travel_time_hours": 0.8,
-    "days": [
-      {
-        "day": 1,
-        "date": "2026-05-10",
-        "morning_departure": {
-          "time": "08:45",
-          "from": "Downtown Kingston",
-          "to": "Fort Henry",
-          "travel_minutes": 15,
-          "mode": "mixed"
-        },
-        "activities": [
-          {
-            "time_start": "09:00",
-            "time_end": "10:15",
-            "venue_name": "Fort Henry National Historic Site",
-            "category": "museums",
-            "cost": 22.0,
-            "duration_reason": "Moderate pace — standard guided tour",
-            "notes": "19th-century British military fortification"
-          },
-          {
-            "time_start": "10:30",
-            "time_end": "11:45",
-            "venue_name": "Royal Military College Museum",
-            "category": "museums",
-            "cost": 0.0,
-            "duration_reason": "Moderate pace — free museum visit",
-            "notes": "Military artifacts and history exhibits"
-          },
-          {
-            "time_start": "13:15",
-            "time_end": "14:30",
-            "venue_name": "Kingston City Hall",
-            "category": "museums",
-            "cost": 0.0,
-            "duration_reason": "Moderate pace — self-guided tour",
-            "notes": "National Historic Site with stunning architecture"
-          },
-          {
-            "time_start": "14:45",
-            "time_end": "16:00",
-            "venue_name": "Kingston Waterfront Trail",
-            "category": "food",
-            "cost": 0.0,
-            "duration_reason": "Moderate pace — leisurely walk along Lake Ontario",
-            "notes": "Scenic waterfront walk from City Park to Breakwater Park"
-          }
-        ],
-        "meals": [
-          {
-            "meal_type": "lunch",
-            "venue_name": "Dianne's Fish Shack & Smokehouse",
-            "time": "12:00",
-            "cost": 28.0
-          },
-          {
-            "meal_type": "dinner",
-            "venue_name": "Chez Piggy",
-            "time": "18:00",
-            "cost": 45.0
-          }
-        ],
-        "evening_return": {
-          "time": "19:30",
-          "from": "Chez Piggy",
-          "to": "Downtown Kingston",
-          "travel_minutes": 5,
-          "mode": "walking"
-        },
-        "daily_budget_allocated": 357.0,
-        "daily_budget_spent": 95.0
       }
     ]
   }
@@ -238,13 +157,20 @@ class ItineraryGenerationError(Exception):
 class ItineraryService:
     """Generates day-by-day itinerary timetables via Gemini."""
 
-    def __init__(self, gemini_client: Optional[GeminiClient] = None):
+    def __init__(
+        self,
+        gemini_client: Optional[GeminiClient] = None,
+        venue_service: Optional[VenueService] = None,
+    ):
         """
         Args:
             gemini_client: Injected client (useful for testing).
                            Created automatically if omitted.
+            venue_service: Reads venue data from the Airflow-managed DB.
+                           Created automatically if omitted.
         """
         self.gemini_client = gemini_client or GeminiClient()
+        self.venue_service = venue_service or VenueService()
         self.logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
@@ -284,8 +210,16 @@ class ItineraryService:
         # 1. Validate & normalise
         validated = self._validate_preferences(preferences, request_id)
 
-        # 2. Build prompt
-        prompt = self._build_generation_prompt(validated)
+        # 1b. Fetch real venue data from Airflow DB
+        venues = await self._fetch_venues(validated)
+        self.logger.info(
+            "Fetched %d venues from Airflow DB",
+            len(venues),
+            extra={"request_id": request_id},
+        )
+
+        # 2. Build prompt (now includes venue data)
+        prompt = self._build_generation_prompt(validated, venues=venues)
 
         # 3. Call Gemini
         try:
@@ -382,7 +316,8 @@ class ItineraryService:
             raise ValueError("At least one interest is required")
 
         # --- Optional defaults ---
-        v.setdefault("starting_location", v.get("location_preference", "Downtown Kingston"))
+        default_start = v.get("location_preference") or f"Downtown {v['city']}"
+        v.setdefault("starting_location", default_start)
         v.setdefault("hours_per_day", 8)
         v.setdefault("transportation_modes", ["mixed"])
         v.setdefault("group_size", None)
@@ -399,8 +334,12 @@ class ItineraryService:
     # Prompt builder
     # ------------------------------------------------------------------
 
-    def _build_generation_prompt(self, prefs: Dict[str, Any]) -> str:
-        """Build the per-request Gemini prompt."""
+    def _build_generation_prompt(
+        self,
+        prefs: Dict[str, Any],
+        venues: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        """Build the per-request Gemini prompt, optionally including venue data."""
         pace = prefs["pace"]
         pp = settings.PACE_PARAMS[pace]
         min_act, max_act = pp["activities_per_day"]
@@ -417,6 +356,17 @@ class ItineraryService:
         transport = ", ".join(prefs["transportation_modes"])
         interests = ", ".join(prefs["interests"])
         dietary = ", ".join(prefs.get("dietary_restrictions", [])) or "None"
+
+        # Format venue data from Airflow DB (if available)
+        venue_block = ""
+        if venues:
+            venue_block = (
+                "\n\n**Available Venues (from database — prefer these):**\n"
+                + VenueService.format_venues_for_prompt(venues)
+                + "\n\nIMPORTANT: Use venues from the list above whenever possible. "
+                "Set 'from_database': true for activities sourced from this list. "
+                "Only invent venues when no suitable match exists.\n"
+            )
 
         return (
             f"Generate a complete day-by-day itinerary for a trip to "
@@ -435,9 +385,40 @@ class ItineraryService:
             f"- Interests: {interests}\n"
             f"- Dietary restrictions: {dietary}\n"
             f"- Group: {prefs.get('group_type', 'not specified')}"
-            f"{', ' + str(prefs['group_size']) + ' people' if prefs.get('group_size') else ''}\n\n"
+            f"{', ' + str(prefs['group_size']) + ' people' if prefs.get('group_size') else ''}\n"
+            f"{venue_block}\n"
             f"Return the itinerary JSON now."
         )
+
+    # ------------------------------------------------------------------
+    # Venue data from Airflow DB
+    # ------------------------------------------------------------------
+
+    async def _fetch_venues(self, prefs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Query the Airflow-managed venue DB for places in the target city
+        that match the traveller's interests.  Returns an empty list if
+        the DB is unreachable (graceful degradation).
+
+        VenueService uses synchronous SQLAlchemy, so we run it in a
+        thread pool to avoid blocking the FastAPI event loop.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None,
+                lambda: self.venue_service.get_venues_for_itinerary(
+                    city=prefs["city"],
+                    interests=prefs["interests"],
+                    budget_per_day=prefs["daily_budget"],
+                ),
+            )
+        except Exception:
+            self.logger.warning(
+                "Could not fetch venues from DB — will generate without real venue data",
+                exc_info=True,
+            )
+            return []
 
     # ------------------------------------------------------------------
     # Response parsing
@@ -504,6 +485,7 @@ class ItineraryService:
                         notes=a.get("notes"),
                         duration_reason=a.get("duration_reason"),
                         estimated_cost=float(a.get("cost", 0)),
+                        from_database=bool(a.get("from_database", False)),
                     )
                 )
 
@@ -655,7 +637,7 @@ if __name__ == "__main__":
         print("=" * 72)
 
         test_input = {
-            "city": "Kingston",
+            "city": "Toronto",
             "country": "Canada",
             "start_date": "2026-05-10",
             "end_date": "2026-05-17",
@@ -663,11 +645,11 @@ if __name__ == "__main__":
             "budget": 2500.0,
             "budget_currency": "CAD",
             "interests": [
-                "museums", "food tours", "historic landmarks",
-                "art galleries", "cafes",
+                "Culture and History", "Food and Beverage",
+                "Entertainment",
             ],
             "pace": "moderate",
-            "location_preference": "City center near public transportation",
+            "location_preference": "Downtown Toronto",
         }
 
         print("\n[INPUT]")

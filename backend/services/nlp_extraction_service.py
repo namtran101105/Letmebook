@@ -126,7 +126,7 @@ class NLPExtractionService:
 
         return prompt
 
-    def extract_preferences(self, user_input: str) -> TripPreferences:
+    async def extract_preferences(self, user_input: str) -> TripPreferences:
         """
         Extract structured trip preferences from user's natural language input.
 
@@ -144,14 +144,12 @@ class NLPExtractionService:
 
         try:
             if self.use_gemini and self.gemini_client:
-                # Call Gemini API (async, so use asyncio.run to make it sync)
-                extracted_text = asyncio.run(
-                    self.gemini_client.generate_content(
-                        prompt=prompt,
-                        system_instruction=self.system_instruction,
-                        temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
-                        max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS
-                    )
+                # Call Gemini API (native async — no asyncio.run wrapper needed)
+                extracted_text = await self.gemini_client.generate_content(
+                    prompt=prompt,
+                    system_instruction=self.system_instruction,
+                    temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
+                    max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS,
                 )
 
                 # Parse JSON from response
@@ -164,12 +162,16 @@ class NLPExtractionService:
                 extracted_data = json.loads(extracted_text)
 
             else:
-                # Call Groq API to extract preferences as JSON
-                extracted_data = self.groq_client.generate_json(
-                    prompt=prompt,
-                    system_instruction=self.system_instruction,
-                    temperature=settings.GROQ_TEMPERATURE,
-                    max_tokens=settings.GROQ_MAX_TOKENS
+                # Call Groq API (sync) — run in thread pool to avoid blocking
+                loop = asyncio.get_running_loop()
+                extracted_data = await loop.run_in_executor(
+                    None,
+                    lambda: self.groq_client.generate_json(
+                        prompt=prompt,
+                        system_instruction=self.system_instruction,
+                        temperature=settings.GROQ_TEMPERATURE,
+                        max_tokens=settings.GROQ_MAX_TOKENS,
+                    ),
                 )
 
             # Create TripPreferences object
@@ -183,7 +185,7 @@ class NLPExtractionService:
         except Exception as e:
             raise Exception(f"Failed to extract preferences: {str(e)}")
 
-    def generate_conversational_response(
+    async def generate_conversational_response(
         self,
         user_input: str,
         preferences: TripPreferences,
@@ -386,12 +388,16 @@ Example format: "Got it, [acknowledge their input]! [Ask for next field?]"
 Response:"""
 
         try:
-            # Generate conversational response using Groq API
-            response = self.groq_client.generate_content(
-                prompt=prompt,
-                system_instruction=system_instruction,
-                temperature=0.7,  # Higher temp for more natural variety
-                max_tokens=300  # Keep responses concise
+            # Generate conversational response using Groq API (sync → thread pool)
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.groq_client.generate_content(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    temperature=0.7,  # Higher temp for more natural variety
+                    max_tokens=300,  # Keep responses concise
+                ),
             )
 
             print(f"Generated response: {response.strip()}")
@@ -406,7 +412,7 @@ Response:"""
             fallback_message = "✅ I've updated your preferences! Check the panel on the right for details." if is_refinement else "✅ I've extracted your preferences! Check the panel on the right for details."
             return fallback_message, all_questions_asked
 
-    def refine_preferences(
+    async def refine_preferences(
         self,
         existing_preferences: TripPreferences,
         additional_input: str
@@ -445,11 +451,16 @@ Examples:
 Return the complete updated JSON object with the same structure:"""
 
         try:
-            updated_data = self.groq_client.generate_json(
-                prompt=prompt,
-                system_instruction=self.system_instruction,
-                temperature=settings.EXTRACTION_TEMPERATURE,
-                max_tokens=settings.EXTRACTION_MAX_TOKENS
+            # Groq is sync — run in thread pool to avoid blocking the event loop
+            loop = asyncio.get_running_loop()
+            updated_data = await loop.run_in_executor(
+                None,
+                lambda: self.groq_client.generate_json(
+                    prompt=prompt,
+                    system_instruction=self.system_instruction,
+                    temperature=settings.GEMINI_EXTRACTION_TEMPERATURE,
+                    max_tokens=settings.GEMINI_EXTRACTION_MAX_TOKENS,
+                ),
             )
 
             updated_preferences = TripPreferences.from_dict(updated_data)

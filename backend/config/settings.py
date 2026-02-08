@@ -34,7 +34,7 @@ class Settings:
 
     # ===== Gemini API Configuration (Primary LLM) =====
     GEMINI_KEY: str = os.getenv("GEMINI_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
     GEMINI_EXTRACTION_TEMPERATURE: float = float(
         os.getenv("EXTRACTION_TEMPERATURE", "0.2")
     )
@@ -56,17 +56,25 @@ class Settings:
     GROQ_MAX_TOKENS: int = int(os.getenv("GROQ_MAX_TOKENS", "2048"))
     GROQ_TIMEOUT: int = int(os.getenv("GROQ_TIMEOUT", "30"))
 
+    # ===== Airflow / Venue Database =====
+    APP_DB_URL: str = os.getenv(
+        "APP_DB_URL",
+        "postgresql+psycopg2://app:app@localhost:5432/app",
+    )
+
     # ===== Application Constants (Non-Negotiable MVP Rules) =====
     MIN_DAILY_BUDGET: float = 50.0  # CAD — minimum $50/day for meals + activities
     DEFAULT_PACE: str = "moderate"
     MAX_TRIP_DURATION_DAYS: int = 14
+    DEFAULT_CITY: str = os.getenv("DEFAULT_CITY", "Toronto")
+    DEFAULT_COUNTRY: str = os.getenv("DEFAULT_COUNTRY", "Canada")
     VALID_PACES: List[str] = ["relaxed", "moderate", "packed"]
     VALID_INTERESTS: List[str] = [
         "history", "food", "waterfront", "nature",
         "arts", "museums", "shopping", "nightlife",
     ]
     VALID_TRANSPORTATION_MODES: List[str] = [
-        "own car", "rental car", "Kingston Transit", "walking only", "mixed",
+        "own car", "rental car", "public transit", "walking only", "mixed",
     ]
 
     # ===== Pace-Specific Parameters (from CLAUDE_EMBEDDED.md) =====

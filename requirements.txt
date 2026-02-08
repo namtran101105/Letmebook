@@ -1,6 +1,6 @@
-# Web Framework
-flask==3.0.0
-flask-cors==4.0.0
+# Web Framework (FastAPI — replaced Flask in Phase 2)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
 
 # HTTP Requests
 requests==2.31.0
@@ -15,13 +15,18 @@ python-dotenv==1.0.0
 # Date/Time Utilities
 python-dateutil==2.8.2
 
-# Testing (optional)
+# LLM — Gemini (primary) + Groq (fallback)
+google-genai==1.62.0
+
+# Database (VenueService → Airflow PostgreSQL)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# Testing
 pytest==7.4.3
 pytest-cov==4.1.0
+pytest-asyncio>=0.23.0
 
-# Code Quality (optional)
+# Code Quality
 black==23.12.1
 flake8==7.0.0
-
-# LLM - Supporting both Gemini and Groq
-google-genai==1.62.0

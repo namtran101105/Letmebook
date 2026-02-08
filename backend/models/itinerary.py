@@ -56,6 +56,9 @@ class Activity:
     # Transportation to next activity
     travel_to_next: Optional[TravelSegment] = None
 
+    # Whether this activity came from the Airflow venue database
+    from_database: bool = False
+
 
 @dataclass
 class Meal:
