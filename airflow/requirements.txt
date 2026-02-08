@@ -1,0 +1,8 @@
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+# Airflow 2.9.x can break with SQLAlchemy 2.x ("Annotated Declarative" mapping errors).
+# Pin to 1.4.x.
+SQLAlchemy==1.4.54
+psycopg2-binary==2.9.9
+chromadb==0.5.20
